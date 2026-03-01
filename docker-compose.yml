@@ -12,7 +12,7 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
@@ -34,18 +34,41 @@ services:
       - ./db-init:/docker-entrypoint-initdb.d
 
 
-  mongodb:
-    image: mongo:8.2.5
-    ports:
-      - "27018:27017" # temporary port mapping for dev
+  # mongodb:
+  #   image: mongo:8.2.5
+  #   ports:
+  #     - "27018:27017" # temporary port mapping for dev
+  #   environment:
+  #     MONGO_INITDB_ROOT_USERNAME: mongodb
+  #     MONGO_INITDB_ROOT_PASSWORD: secretmongodb
+  #   volumes:
+  #     - mongodb-data:/data/db
+
+
+  go-ingestor:
+    build: ./data-ingestion
     environment:
-      MONGO_INITDB_ROOT_USERNAME: mongodb
-      MONGO_INITDB_ROOT_PASSWORD: secretmongodb
-    volumes:
-      - mongodb-data:/data/db
+      - KAFKA_BROKER=kafka:9092
+    depends_on:
+      - kafka
+
+
+  python-consumer:
+    build: ./consumer
+    environment:
+      - PYTHONUNBUFFERED=1
+      - KAFKA_BROKER=kafka:9092
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASS=secretpostgres
+      - DB_NAME=db
+    depends_on:
+      - kafka
+      - timescaledb
 
 
 volumes:
   kafka-data:
   postgres-data:
-  mongodb-data:
+  # mongodb-data:

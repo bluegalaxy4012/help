@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -16,22 +17,25 @@ var pricesWriter *kafka.Writer
 var newsWriter *kafka.Writer
 
 type PriceObject struct {
-	Time   string
-	Symbol string
-	Price  float64
-	Volume float64
+	Time   string  `json:"time"`
+	Symbol string  `json:"symbol"`
+	Price  float64 `json:"price"`
+	Volume float64 `json:"volume"`
 }
 
 type NewsObject struct {
-	PublishedAt string
-	Headline    string
-	Summary     string
-	URL         string
-	Tickers     []string
+	PublishedAt string   `json:"published_at"`
+	Headline    string   `json:"headline"`
+	Summary     string   `json:"summary"`
+	URL         string   `json:"url"`
+	Tickers     []string `json:"tickers"`
 }
 
 func initKafkaWriters() {
-	broker := "localhost:9092"
+	broker := os.Getenv("KAFKA_BROKER")
+	if broker == "" {
+		broker = "localhost:9092"
+	}
 
 	pricesWriter = &kafka.Writer{
 		Addr:                   kafka.TCP(broker),
@@ -104,8 +108,8 @@ func startBinanceWS() {
 
 		// log.Println(rawJson)
 
-		// unix epoch float64 miliseconds to iso-8601 datetime string
-		datetime := time.Unix(0, int64(rawJson["E"].(float64))*int64(time.Millisecond)).UTC().Format(time.RFC3339)
+		// unix epoch float64 miliseconds to iso-8601 datetime string, with milliseconds
+		datetime := time.Unix(0, int64(rawJson["E"].(float64))*int64(time.Millisecond)).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 
 		// strings to floats
 		var price, volume float64
