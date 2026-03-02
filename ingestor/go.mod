@@ -1,4 +1,4 @@
-module data-ingestion
+module ingestor
 
 go 1.26.0
 

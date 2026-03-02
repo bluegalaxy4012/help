@@ -46,7 +46,7 @@ services:
 
 
   go-ingestor:
-    build: ./data-ingestion
+    build: ./ingestor
     environment:
       - KAFKA_BROKER=kafka:9092
     depends_on:
