@@ -49,6 +49,7 @@ services:
     build: ./ingestor
     environment:
       - KAFKA_BROKER=kafka:9092
+      - FINNHUB_API_KEY=d6inj39r01qm7dc8718gd6inj39r01qm7dc87190
     depends_on:
       - kafka
 
@@ -58,6 +59,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - KAFKA_BROKER=kafka:9092
+      - FINNHUB_API_KEY=d6inj39r01qm7dc8718gd6inj39r01qm7dc87190
       - DB_HOST=timescaledb
       - DB_PORT=5432
       - DB_USER=postgres
@@ -65,6 +67,20 @@ services:
       - DB_NAME=db
     depends_on:
       - kafka
+      - timescaledb
+
+
+  api:
+    build: ./api
+    ports:
+      - "8888:8888"
+    environment:
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASS=secretpostgres
+      - DB_NAME=db
+    depends_on:
       - timescaledb
 
 

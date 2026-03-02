@@ -123,7 +123,7 @@ def consume_news():
                 ))
                 conn.commit()
 
-                print(f"[NEWS DB] Vectorized & Saved: {news['headline'][:60]}...")
+                # print(f"[NEWS DB] Vectorized & Saved: {news['headline'][:20]}...")
             
             except Exception as e:
                 print(f"Error processing news object message: {e}")

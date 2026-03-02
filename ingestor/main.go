@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/Finnhub-Stock-API/finnhub-go/v2"
 	"github.com/gorilla/websocket"
-	"github.com/mmcdole/gofeed"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -134,42 +134,53 @@ func startBinanceWS() {
 func startNewsScraper() {
 	log.Println("Start News Scraper")
 
-	feedParser := gofeed.NewParser()
+	apiKey := os.Getenv("FINNHUB_API_KEY")
+	if apiKey == "" {
+		apiKey = "d6inj39r01qm7dc8718gd6inj39r01qm7dc87190"
+	}
+
+	cfg := finnhub.NewConfiguration()
+	cfg.AddDefaultHeader("X-Finnhub-Token", apiKey)
+	finnhubClient := finnhub.NewAPIClient(cfg)
+
+	tickers := []string{"NVDA", "AAPL", "MSFT", "AMZN", "GLD", "SLV", "USO", "UNG", "HSY", "IBIT", "ETHA"}
 	readUrls := map[string]bool{}
 
 	for {
-		feed, err := feedParser.ParseURL("https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL,MSFT,TSLA,BTC-USD")
+		today := time.Now().UTC().Format("2006-01-02")
 
-		if err != nil {
-			log.Println("RSS parsing error: ", err)
-		} else {
-			for _, item := range feed.Items {
-				if !readUrls[item.Link] {
-					readUrls[item.Link] = true
+		for _, ticker := range tickers {
+			news, _, err := finnhubClient.DefaultApi.CompanyNews(context.Background()).Symbol(ticker).From(today).To(today).Execute()
 
-					publishDate := item.PublishedParsed
-					if publishDate == nil {
-						now := time.Now()
-						publishDate = &now
-					}
+			if err != nil {
+				log.Printf("Finnhub SDK error for %s: %v", ticker, err)
+				continue
+			}
 
-					publishedAt := publishDate.UTC().Format(time.RFC3339)
+			for _, item := range news {
+				newsUrl := item.GetUrl()
+
+				if !readUrls[newsUrl] {
+					readUrls[newsUrl] = true
+
+					unixTime := item.GetDatetime()
+					publishedAt := time.Unix(unixTime, 0).UTC().Format(time.RFC3339)
 
 					newsObject := NewsObject{
 						PublishedAt: publishedAt,
-						Headline:    item.Title,
-						Summary:     item.Description,
-						URL:         item.Link,
-						Tickers:     []string{},
+						Headline:    item.GetHeadline(),
+						Summary:     item.GetSummary(),
+						URL:         newsUrl,
+						Tickers:     []string{ticker},
 					}
 
-					// log.Println(newsObject)
+					log.Println(newsObject)
 					pushToKafka(newsWriter, "", newsObject)
 				}
 			}
 		}
 
-		time.Sleep(3 * time.Minute)
+		time.Sleep(5 * time.Minute)
 	}
 }
 

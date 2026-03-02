@@ -7,6 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
 COPY main.py .
-COPY backfill.py .
 
-CMD ["sh", "-c", "python backfill.py && python main.py"]
+# on docker network
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888"]
