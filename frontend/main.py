@@ -111,65 +111,92 @@ TOOLS = [
 
 
 
+
 # main loop
-if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live news..."):
+if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live news...", key="main_chat_input"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Assistant loading tools..."):
-            
-            response = client.chat.completions.create(
-                model="openai/gpt-oss-120b",
-                messages=st.session_state.messages,
-                tools=TOOLS,
-                temperature=0.65
-            )
-            
-            response_message = response.choices[0].message
-            # save the state so we can create a pop-up, just for fun
-            st.session_state.messages.append(response_message.model_dump(exclude_none=True))
-
-
-
-            if response_message.tool_calls:
-                for tool_call in response_message.tool_calls:
-                    if tool_call.function.name == "fetch_local_database":
-                        args = json.loads(tool_call.function.arguments)
-                        
-                        st.toast(f"Assistant requested DB fetch for: {args.get('symbols')} & '{args.get('search_query')}'")
-                        db_results = fetch_local_database(args.get("symbols", []), args.get("search_query", prompt))
-                        
-                        # we inject this as a message but it will not be visible since its role is "tool"
-                        st.session_state.messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_call.function.name,
-                            "content": db_results
-                        })
+        with st.spinner("Assistant using tools..."):
+            try:
+                # it can use the tools over and over again
+                MAX_ITERATIONS = 5
+                iteration = 0
                 
-                # after getting the db results, we redo a prompt to use the info
-                with st.spinner("Analyzing retrieved database context..."):
-                    second_response = client.chat.completions.create(
+                while iteration < MAX_ITERATIONS:
+                    iteration += 1
+                    
+                    response = client.chat.completions.create(
                         model="openai/gpt-oss-120b",
                         messages=st.session_state.messages,
                         tools=TOOLS,
                         temperature=0.65
                     )
-                    raw_answer = second_response.choices[0].message.content
                     
-                    # it sometimes hallucinates source/reference brackets and also escape $ so we don't start latex mode
-                    clean_answer = re.sub(r'【.*?】', '', raw_answer)
-                    clean_answer = clean_answer.replace('$', r'\$')
+                    response_message = response.choices[0].message
                     
-                    st.markdown(clean_answer)
-                    st.session_state.messages.append({"role": "assistant", "content": clean_answer})
-            else:
-                raw_answer = response_message.content
-                if raw_answer:
-                    clean_answer = re.sub(r'【.*?】', '', raw_answer)
-                    clean_answer = clean_answer.replace('$', r'\$')
+                    # temporary, for stripping out unsupported metadata like 'executed_tools' so it doesn't crash
+                    safe_msg = {
+                        "role": response_message.role,
+                        "content": response_message.content
+                    }
+                    if response_message.tool_calls:
+                        safe_msg["tool_calls"] = [tc.model_dump() for tc in response_message.tool_calls]
+                    
+                    # save state
+                    st.session_state.messages.append(safe_msg)
 
-                    st.markdown(clean_answer)
-                    st.session_state.messages.append({"role": "assistant", "content": clean_answer})
+                    if response_message.tool_calls:
+                        for tool_call in response_message.tool_calls:
+                            if tool_call.function.name == "fetch_local_database":
+                                args = json.loads(tool_call.function.arguments)
+                                
+                                st.toast(f"Assistant requested DB fetch for: {args.get('symbols')} & '{args.get('search_query')}'")
+                                db_results = fetch_local_database(args.get("symbols", []), args.get("search_query", prompt))
+                                
+                                # we inject this as a message but it will not be visible since its role is "tool"
+                                st.session_state.messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": tool_call.function.name,
+                                    "content": db_results
+                                })
+                            else:
+                                # catch-all for other tools if model doesn't yet want to answer
+                                st.session_state.messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": tool_call.function.name,
+                                    "content": "Tool executed successfully"
+                                })
+                        
+                        # after getting the db results, we redo a prompt to use the info
+                        # the loop restarts here so the AI can read the injected tool messages
+                        continue 
+                    
+                    raw_answer = response_message.content
+                    if raw_answer:
+                        # it sometimes hallucinates source/reference brackets and also escape $ so we don't start latex mode
+
+                        clean_answer = re.sub(r'【.*?】', '', raw_answer)
+                        clean_answer = clean_answer.replace('$', r'\$')
+
+                        st.markdown(clean_answer)
+                        
+                        # update the last message in history to be the clean version so we don't give garbage back to model
+                        st.session_state.messages[-1]["content"] = clean_answer
+                        
+                        # break the loop because we got our final text answer
+                        break 
+                    
+                    # safety break if it returns no text and no tools
+                    break 
+                    
+                if iteration >= MAX_ITERATIONS:
+                    st.warning("Assistant reached maximum thinking capacity")
+            
+            except Exception as e:
+                # global catch for any weird api errors, connection drops, or rate limits
+                st.error(f"Something went wrong: {e}")
