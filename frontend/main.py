@@ -17,6 +17,7 @@ TICKER_MAP = {
     "gold": "GLD", "silver": "SLV", "oil": "USO", "natgas": "UNG", "cocoa": "HSY",
     "bitcoin": "IBIT", "btc": "IBIT", "ethereum": "ETHA", "eth": "ETHA", "tesla": "TSLA"
 }
+AVAILABLE_ASSETS = ", ".join([f"{name.title()} ({sym})" for name, sym in TICKER_MAP.items()])
 
 st.set_page_config(page_title="AI Trading Helper", layout="wide")
 st.title("AI Trading Helper")
@@ -24,6 +25,10 @@ st.title("AI Trading Helper")
 
 SYSTEM_PROMPT = """You are an elite quantitative analyst AI powered by the GPT-OSS-120B architecture.
 You have access to a highly-secure local database via the `fetch_local_database` tool, and the live internet via your native `browser_search`.
+
+CRITICAL DATABASE RULES:
+Our local price database ONLY tracks the following specific symbols: 
+{AVAILABLE_ASSETS}
 
 CRITICAL FORMATTING RULES:
 1. NEVER output raw citation brackets like 【4†source】 or anything similar. Weave your sources naturally into your sentences.
@@ -149,13 +154,14 @@ if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live n
                     second_response = client.chat.completions.create(
                         model="openai/gpt-oss-120b",
                         messages=st.session_state.messages,
-                        tools=[{"type": "browser_search"}],
+                        tools=TOOLS,
                         temperature=0.65
                     )
                     raw_answer = second_response.choices[0].message.content
                     
-                    # it sometimes hallucinates source/reference brackets
+                    # it sometimes hallucinates source/reference brackets and also escape $ so we don't start latex mode
                     clean_answer = re.sub(r'【.*?】', '', raw_answer)
+                    clean_answer = clean_answer.replace('$', r'\$')
                     
                     st.markdown(clean_answer)
                     st.session_state.messages.append({"role": "assistant", "content": clean_answer})
@@ -163,6 +169,7 @@ if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live n
                 raw_answer = response_message.content
                 if raw_answer:
                     clean_answer = re.sub(r'【.*?】', '', raw_answer)
+                    clean_answer = clean_answer.replace('$', r'\$')
 
                     st.markdown(clean_answer)
                     st.session_state.messages.append({"role": "assistant", "content": clean_answer})
