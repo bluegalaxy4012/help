@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from confluent_kafka import Producer
 
 KAFKA_BROKER = os.environ.get("KAFKA_BROKER", "kafka:9092")
-FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "d6inj39r01qm7dc8718gd6inj39r01qm7dc87190")
+FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "d6iu3jhr01qleu95it4gd6iu3jhr01qleu95it50")
 
 def run_backfill():
     print(f"Connecting to Kafka at {KAFKA_BROKER} for backfill")

@@ -136,7 +136,7 @@ func startNewsScraper() {
 
 	apiKey := os.Getenv("FINNHUB_API_KEY")
 	if apiKey == "" {
-		apiKey = "d6inj39r01qm7dc8718gd6inj39r01qm7dc87190"
+		apiKey = "d6iu3jhr01qleu95it4gd6iu3jhr01qleu95it50"
 	}
 
 	cfg := finnhub.NewConfiguration()

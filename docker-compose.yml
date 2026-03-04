@@ -49,7 +49,7 @@ services:
     build: ./ingestor
     environment:
       - KAFKA_BROKER=kafka:9092
-      - FINNHUB_API_KEY=d6inj39r01qm7dc8718gd6inj39r01qm7dc87190
+      - FINNHUB_API_KEY=d6iu3jhr01qleu95it4gd6iu3jhr01qleu95it50
     depends_on:
       - kafka
 
@@ -59,7 +59,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - KAFKA_BROKER=kafka:9092
-      - FINNHUB_API_KEY=d6inj39r01qm7dc8718gd6inj39r01qm7dc87190
+      - FINNHUB_API_KEY=d6iu3jhr01qleu95it4gd6iu3jhr01qleu95it50
       - DB_HOST=timescaledb
       - DB_PORT=5432
       - DB_USER=postgres
@@ -82,6 +82,17 @@ services:
       - DB_NAME=db
     depends_on:
       - timescaledb
+
+  
+  frontend:
+    build: ./frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - GRAPHQL_API_URL=http://api:8888/graphql
+      - LLM_API_KEY=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
+    depends_on:
+      - api
 
 
 volumes:
