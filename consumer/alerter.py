@@ -182,7 +182,6 @@ def evaluate_alerts():
 
 
 if __name__ == "__main__":
-    time.sleep(15) # TO FIX TO WAIT FOR DB TO BE READY
     print("Starting Alert Worker", flush=True)
     while True:
         try:

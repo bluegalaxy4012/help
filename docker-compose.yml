@@ -19,9 +19,15 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     volumes:
       - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
 
-  timescaledb:
+  db:
     image: timescale/timescaledb:2.25.1-pg18
     ports:
       - "5433:5432" # temporary port mapping for dev
@@ -32,41 +38,52 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./db-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+  
 
   go-ingestor:
     build: ./ingestor
     environment:
       - KAFKA_BROKER=kafka:9092
-      - FINNHUB_API_KEY=xxxxxx
+      - FINNHUB_API_KEY=xxxxxxxxxx
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy 
 
 
   python-consumer:
     build: ./consumer
     environment:
       - KAFKA_BROKER=kafka:9092
-      - FINNHUB_API_KEY=xxxxxx
-      - DB_HOST=timescaledb
+      - FINNHUB_API_KEY=xxxxxxxxxx
+      - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=postgres
       - DB_PASS=secretpostgres
       - DB_NAME=db
     depends_on:
-      - kafka
-      - timescaledb
+      kafka:
+        condition: service_healthy
+      db:
+        condition: service_healthy
 
   python-alerter:
     build: ./consumer
     command: python alerter.py
     environment:
-      - DB_HOST=timescaledb
+      - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=postgres
       - DB_PASS=secretpostgres
       - DB_NAME=db
     depends_on:
-      - timescaledb
+      db:
+        condition: service_healthy
 
 
   api:
@@ -75,13 +92,14 @@ services:
     # ports:
     #   - "8888:8888"
     environment:
-      - DB_HOST=timescaledb
+      - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=postgres
       - DB_PASS=secretpostgres
       - DB_NAME=db
     depends_on:
-      - timescaledb
+      db:
+        condition: service_healthy
 
   
   frontend:
@@ -90,11 +108,11 @@ services:
       - "8501:8501"
     environment:
       - GRAPHQL_API_URL=http://api:8888/graphql
-      - LLM_API_KEY=xxxxxx
+      - LLM_API_KEY=xxxxxxxxxx
       - LLM_PROVIDER_API_URL=https://openrouter.ai/api/v1
       - MODEL_NAME=arcee-ai/trinity-large-preview:free
-      - SERPER_API_KEY=xxxxxx
-      - FINNHUB_API_KEY=xxxxxx
+      - SERPER_API_KEY=xxxxxxxxxx
+      - FINNHUB_API_KEY=xxxxxxxxxx
     depends_on:
       - api
 
