@@ -9,6 +9,8 @@ CREATE TABLE raw_prices (
     volume DOUBLE PRECISION NOT NULL
 );
 
+CREATE INDEX ON raw_prices (symbol, time DESC);
+
 SELECT create_hypertable('raw_prices', 'time');
 
 CREATE TABLE financial_news (
@@ -24,13 +26,14 @@ CREATE TABLE financial_news (
 CREATE INDEX ON financial_news USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 
-CREATE TABLE IF NOT EXISTS active_alerts (
+CREATE TABLE alerts (
     id SERIAL PRIMARY KEY,
     user_id INTEGER DEFAULT 0,
     symbol VARCHAR(15) NOT NULL,
     price_change_percent NUMERIC NOT NULL,
-    timeframe_hours NUMERIC NOT NULL,
-    volume_multiplier NUMERIC DEFAULT 1.0,
+    timeframe_minutes INTEGER NOT NULL,
+    volume_multiplier NUMERIC DEFAULT 0.0,
+    volume_over BOOLEAN DEFAULT True,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

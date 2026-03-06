@@ -33,6 +33,14 @@ Our local database ONLY tracks real-time prices and news for the following exact
 - STOCKS: {', '.join(TOP_STOCKS)}
 - ETFS: {', '.join(TOP_ETFS)}
 
+ALERTS MANAGEMENT RULES:
+You can manage background monitoring alerts for the user. 
+1. If the user says "Add an alert" but doesn't provide the details, politely ask them to provide: 1. The Asset Symbol, 2. The Price Change Percentage (e.g. -2.1% or 5%, MANDATORY as a float with up to two decimal places), 3. The Timeframe in minutes (e.g. 60 minutes, MANDATORY as an integer the number of minutes). 4. The Volume multiplier (e.g. x1.25, MANDATORY as a float with up to two decimal places). The first three details are mandatory. DO NOT guess these parameters.
+2. The default volume multiplier is 0.0 (any volume). Only set a volume multiplier if the user explicitly asks for a volume spike (e.g. "with over 1.5x volume").
+3. Ask if the volume should be OVER or UNDER the multiplier. The default is OVER (e.g. "with over 1.5x volume" or "with under 1.5x volume").
+4. Use `list_alerts` to show currently active monitors.
+5. Use `delete_alert` if the user wants to remove one (you must ask for the exact Alert ID if they don't provide it).
+
 TOOL ROUTING & ANTI-HALLUCINATION RULES:
 1. For assets IN THE LIST ABOVE: Always use `fetch_local_database` first. 
 2. For assets NOT IN THE LIST: DO NOT use `fetch_local_database`. Go directly to `browser_search`.
@@ -173,12 +181,71 @@ def browser_search(query, num_results=3):
                 f"Source: {r.get('link', '')}\n"
             )
 
-        print("Debug print results browser search:\n", price_info + "\n".join(results), flush=True)
+        # print("Debug print results browser search:\n", price_info + "\n".join(results), flush=True)
 
         return price_info + "\n".join(results)
 
     except Exception as e:
         return f"Search error: {e}"
+
+def create_database_alert(symbol, percent_change, tf_minutes, vol_mult=0.0, vol_over=True):
+    mutation = """
+        mutation CreateAlert($sym: String!, $percent: Float!, $mins: Int!, $vol: Float!, $over: Boolean!) {
+            createAlert(symbol: $sym, priceChangePercent: $percent, timeframeMinutes: $mins, volumeMultiplier: $vol, volumeOver: $over) {
+                id
+                symbol
+            }
+        }
+        """
+    
+    variables = {
+        "sym": symbol.upper(), "percent": float(percent_change),
+        "mins": int(tf_minutes), "vol": float(vol_mult), "over": bool(vol_over)
+    }
+    
+    try:
+        res = requests.post(DB_API_URL, json={"query": mutation, "variables": variables}, timeout=5)
+        data = res.json()
+
+        if "errors" in data:
+            return f"Failed to set alert: {data['errors'][0]['message']}"
+        
+        alert_id = data["data"]["createAlert"]["id"]
+        return f"SUCCESS: Alert #{alert_id} created for {symbol.upper()}"
+    
+    except Exception as e:
+        return f"API Error: {e}"
+
+
+def get_database_alerts():
+    query = """query { getAlerts { id symbol priceChangePercent timeframeMinutes } }"""
+
+    try:
+        res = requests.post(DB_API_URL, json={"query": query}, timeout=5).json()
+        alerts = res.get("data", {}).get("getAlerts", [])
+
+        if not alerts:
+            return "No active alerts found"
+        
+        return "ACTIVE ALERTS:\n" + "\n".join([f"ID: {a['id']} | {a['symbol']} | Target: {a['priceChangePercent']}% | Timeframe: {a['timeframeMinutes']}h" for a in alerts])
+    except Exception as e:
+        return f"API Error: {e}"
+
+def delete_database_alert(alert_id):
+    mutation = """mutation DeleteAlert($id: Int!) { deleteAlert(alertId: $id) }"""
+    
+    try:
+        res = requests.post(DB_API_URL, json={"query": mutation, "variables": {"id": int(alert_id)}}, timeout=5).json()
+
+        success = res.get("data", {}).get("deleteAlert", False)
+
+        if success:
+            return f"SUCCESS: Alert ID {alert_id} deleted"
+        else:
+            return f"Failed to delete alert ID {alert_id}. It may not exist or may have already been deleted"
+    except Exception as e:
+        return f"API Error: {e}"
+    
 
 
 
@@ -223,7 +290,63 @@ TOOLS = [
                 "required": ["symbols", "search_query"]
             }
         }
-    }
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "list_alerts",
+            "description": "Fetches a list of all currently active monitoring alerts.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_alert",
+            "description": "Deletes an active alert by its ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {"alert_id": {"type": "integer", "description": "The exact numeric ID of the alert."}},
+                "required": ["alert_id"]
+            }
+        }
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "create_alert",
+            "description": "Creates a real-time monitoring alert for a specific financial asset.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "The official ticker symbol (e.g., BTC, AAPL)."
+                    },
+                    "price_change_percent": {
+                        "type": "number",
+                        "description": "The percentage change to trigger the alert. Use negative for drops (-2.0) and positive for pumps (5.0)."
+                    },
+                    "timeframe_minutes": {
+                        "type": "integer",
+                        "description": "The time window to measure the price change over, in minutes as integer (e.g., 120)."
+                    },
+                    "volume_multiplier": {
+                        "type": "number",
+                        "description": "The volume spike multiplier. Default is 0.0 (any volume)."
+                    },
+                    "volume_over": {
+                        "type": "boolean",
+                        "description": "Set to true if volume must be GREATER than the multiplier. Set to false if volume must be LESS than the multiplier. Default is true."
+                    }
+                },
+                "required": ["symbol", "price_change_percent", "timeframe_minutes"]
+            }
+        }
+    },
 ]
 
 
@@ -284,6 +407,7 @@ if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live n
                                     "name": tool_call.function.name,
                                     "content": db_results
                                 })
+
                             elif tool_call.function.name == "browser_search":
                                 # args will have 'query' and 'num_results' fields based on our tool definition
                                 args = json.loads(tool_call.function.arguments)
@@ -295,6 +419,50 @@ if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live n
                                     "role": "tool",
                                     "tool_call_id": tool_call.id,
                                     "name": "browser_search",
+                                    "content": results
+                                })
+
+                            elif tool_call.function.name == "create_alert":
+                                args = json.loads(tool_call.function.arguments)
+                                
+                                st.toast(f"Setting alert for {args.get('symbol')}")
+                                result = create_database_alert(
+                                    args.get("symbol"),
+                                    args.get("price_change_percent"),
+                                    args.get("timeframe_minutes"),
+                                    args.get("volume_multiplier", 0.0),
+                                    args.get("volume_over", True)
+                                )
+                                
+                                st.session_state.messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": "create_alert",
+                                    "content": result
+                                })
+
+                            elif tool_call.function.name == "list_alerts":
+                                st.toast(f"Assistant requested list of active alerts")
+                                results = get_database_alerts()
+
+                                st.session_state.messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": "list_alerts",
+                                    "content": results
+                                })
+
+                            elif tool_call.function.name == "delete_alert":
+                                args = json.loads(tool_call.function.arguments)
+                                alert_id = args.get("alert_id")
+
+                                st.toast(f"Assistant requested deletion of alert ID: {alert_id}")
+                                results = delete_database_alert(alert_id)
+
+                                st.session_state.messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": "delete_alert",
                                     "content": results
                                 })
                         

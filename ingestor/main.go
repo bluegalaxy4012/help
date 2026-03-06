@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,6 +64,9 @@ func initKafkaWriters() {
 		Balancer:               &kafka.LeastBytes{},
 		AllowAutoTopicCreation: true,
 		MaxAttempts:            5,
+		Async:                  true,
+		BatchSize:              100,
+		BatchTimeout:           10 * time.Millisecond,
 	}
 
 	newsWriter = &kafka.Writer{
@@ -71,6 +75,9 @@ func initKafkaWriters() {
 		Balancer:               &kafka.LeastBytes{},
 		AllowAutoTopicCreation: true,
 		MaxAttempts:            5,
+		Async:                  true,
+		BatchSize:              20,
+		BatchTimeout:           20 * time.Millisecond,
 	}
 }
 
@@ -143,8 +150,14 @@ func startBinanceWS() {
 
 			// strings to floats
 			var price, volume float64
-			fmt.Sscanf(rawJson["p"].(string), "%f", &price)
-			fmt.Sscanf(rawJson["q"].(string), "%f", &volume)
+			// fmt.Sscanf(rawJson["p"].(string), "%f", &price)
+			// fmt.Sscanf(rawJson["q"].(string), "%f", &volume)
+			price, err1 := strconv.ParseFloat(rawJson["p"].(string), 64)
+			volume, err2 := strconv.ParseFloat(rawJson["q"].(string), 64)
+
+			if err1 != nil || err2 != nil {
+				continue
+			}
 
 			var symbol string
 			symbol = rawJson["s"].(string)
@@ -261,7 +274,7 @@ func startNewsScraper() {
 				}
 			}
 
-			time.Sleep(1 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 		}
 
 		time.Sleep(5 * time.Minute)

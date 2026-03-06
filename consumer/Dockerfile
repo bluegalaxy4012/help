@@ -8,5 +8,6 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 
 COPY main.py .
 COPY backfill.py .
+COPY alerter.py .
 
 CMD ["sh", "-c", "python backfill.py && python main.py"]

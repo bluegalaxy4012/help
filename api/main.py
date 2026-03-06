@@ -23,7 +23,9 @@ class AlertObject:
     id: int
     symbol: str
     price_change_percent: float
-    timeframe_hours: float
+    timeframe_minutes: int
+    volume_multiplier: float
+    volume_over: bool
 
 @strawberry.type
 class Mutation:
@@ -32,18 +34,19 @@ class Mutation:
         self, 
         symbol: str, 
         price_change_percent: float, 
-        timeframe_hours: float, 
-        volume_multiplier: float = 1.0
+        timeframe_minutes: int, 
+        volume_multiplier: float = 0.0,
+        volume_over: bool = True
     ) -> AlertObject:
         conn = get_db()
         cursor = conn.cursor()
         
         # for now uid is 0 since no auth
         query = """
-            INSERT INTO active_alerts (user_id, symbol, price_change_pct, timeframe_hours, volume_multiplier)
+            INSERT INTO alerts (user_id, symbol, price_change_percent, timeframe_minutes, volume_multiplier)
             VALUES (0, %s, %s, %s, %s) RETURNING id;
         """
-        cursor.execute(query, (symbol.upper(), price_change_percent, timeframe_hours, volume_multiplier))
+        cursor.execute(query, (symbol.upper(), price_change_percent, timeframe_minutes, volume_multiplier))
         alert_id = cursor.fetchone()[0]
         
         conn.commit()
@@ -54,8 +57,27 @@ class Mutation:
             id=alert_id, 
             symbol=symbol.upper(), 
             price_change_percent=price_change_percent, 
-            timeframe_hours=timeframe_hours
+            timeframe_minutes=timeframe_minutes,
+            volume_multiplier=volume_multiplier,
+            volume_over=volume_over
         )
+    
+
+    @strawberry.mutation
+    def delete_alert(self, alert_id: int) -> bool:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # for now uid is 0 since no auth
+        cursor.execute("DELETE FROM alerts WHERE id = %s AND user_id = 0 RETURNING id;", (alert_id,))
+        deleted_row = cursor.fetchone()
+
+        conn.commit()
+        conn.close()
+
+        if deleted_row:
+            return True
+        return False
 
 
 @strawberry.type
@@ -105,6 +127,29 @@ class Query:
         conn.close()
 
         return [NewsObject(headline=row[0], summary=row[1], url=row[2], relevance_score=row[3]) for row in rows]
+    
+    @strawberry.field
+    def get_alerts(self) -> List[AlertObject]:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # for now uid is 0 since no auth
+        query = "SELECT id, symbol, price_change_percent, timeframe_minutes, volume_multiplier, volume_over FROM alerts WHERE is_active = TRUE AND user_id = 0;"
+        cursor.execute(query)
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            AlertObject(
+                id=row[0], 
+                symbol=row[1], 
+                price_change_percent=row[2], 
+                timeframe_minutes=row[3],
+                volume_multiplier=row[4],
+                volume_over=row[5]
+            ) for row in rows
+        ]
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)
 app = FastAPI()

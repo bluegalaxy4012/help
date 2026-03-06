@@ -75,7 +75,7 @@ def insert_price_batch(conn, cursor, batch):
     try:
         execute_values(cursor, query, batch)
         conn.commit()
-        print(f"[PRICES DB] Inserted batch of {len(batch)} prices", flush=True)
+        # print(f"[PRICES DB] Inserted batch of {len(batch)} prices", flush=True)
     except Exception as e:
         print(f"[PRICES DB ERROR] Failed to insert prices: {e}", flush=True)
         conn.rollback()
