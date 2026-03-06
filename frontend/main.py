@@ -5,43 +5,56 @@ import re
 import streamlit as st
 from openai import OpenAI
 
-API_URL = os.environ.get("GRAPHQL_API_URL", "http://graphql_api:8888/graphql")
+DB_API_URL = os.environ.get("GRAPHQL_API_URL", "http://graphql_api:8888/graphql")
+LLM_PROVIDER_API_URL = os.environ.get("LLM_PROVIDER_API_URL", "https://api.groq.com/openai/v1")
+MODEL_NAME = os.environ.get("MODEL_NAME", "openai/gpt-oss-120b")
 LLM_API_KEY = os.environ.get("LLM_API_KEY")
 
-# use openai client with GPT-OSS-120B for now
-client = OpenAI(api_key=LLM_API_KEY, base_url="https://api.groq.com/openai/v1")
+SERPER_API_KEY = os.environ.get("SERPER_API_KEY", None)
+FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", None)
+
+client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_PROVIDER_API_URL)
 
 # we have info just for a few tickers in our local db for now
-TICKER_MAP = {
+NEWS_TICKER_MAP = {
     "apple": "AAPL", "microsoft": "MSFT", "nvidia": "NVDA", "amazon": "AMZN",
     "gold": "GLD", "silver": "SLV", "oil": "USO", "natgas": "UNG", "cocoa": "HSY",
     "bitcoin": "IBIT", "btc": "IBIT", "ethereum": "ETHA", "eth": "ETHA", "tesla": "TSLA"
 }
-AVAILABLE_ASSETS = ", ".join([f"{name.title()} ({sym})" for name, sym in TICKER_MAP.items()])
+
+PRICE_TICKER_MAP = {
+    "BTC": "BTCUSDT", 
+    "ETH": "ETHUSDT", 
+}
+
+# AVAILABLE_ASSETS = ", ".join([f"{name.title()} ({sym})" for name, sym in NEWS_TICKER_MAP.items()])
+NEWS_TICKER_STRING = ", ".join([f"'{sym}'" for sym in NEWS_TICKER_MAP.values()])
+PRICE_TICKER_STRING = ", ".join([f"'{sym}'" for sym in PRICE_TICKER_MAP.values()])
 
 st.set_page_config(page_title="AI Trading Helper", layout="wide")
 st.title("AI Trading Helper")
 
 
-SYSTEM_PROMPT = """You are an elite quantitative analyst AI powered by the GPT-OSS-120B architecture.
-You have access to a highly-secure local database via the `fetch_local_database` tool, and the live internet via your native `browser_search`.
+SYSTEM_PROMPT = f"""You are an elite quantitative analyst AI powered by the {MODEL_NAME} architecture.
+You have access to a highly-secure local database via the `fetch_local_database` tool, and the live internet via your `browser_search` tool.
 
 CRITICAL DATABASE RULES:
-Our local price database ONLY tracks the following specific symbols: 
-{AVAILABLE_ASSETS}
+Our local database has strictly separated formats for prices and news. You MUST use the correct format when calling `fetch_local_database`:
+1. For PRICES, use ONLY these exact symbols: {PRICE_TICKER_STRING}
+2. For NEWS, use ONLY these keywords: {NEWS_TICKER_STRING}
 
 CRITICAL FORMATTING RULES:
-1. NEVER output raw citation brackets like 【4†source】 or anything similar. Weave your sources naturally into your sentences.
-2. NEVER use Markdown tables to present stock prices or data. Present your analysis using professional, flowing paragraphs or clean bullet points.
+1. NEVER output raw citation brackets like 【4†source】. Weave your sources naturally into your sentences.
+2. NEVER use Markdown tables for stock prices or data. Use professional paragraphs or clean bullet points.
 3. Speak like a brilliant, articulate hedge-fund manager giving a live briefing to their team.
+4. DO NOT use `browser_search` to find live prices. Web search snippets are cached and inaccurate for live pricing. Use it ONLY for narrative news, market sentiment, or macro events.
 
-Always use `fetch_local_database` first to check internal prices and semantic news. If the internal data is insufficient, use your native browser tool."""
-
+Always use `fetch_local_database` first. If it returns 'No specific data found', DO NOT call it again. Immediately fall back to `browser_search` and prioritize financial news sources."""
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "assistant", "content": "I am online, powered by OpenAI's GPT-OSS-120B. I have native web browsing and access to most recent news. What are we analyzing today?"}
+        {"role": "assistant", "content": f"I am online, powered by {MODEL_NAME}. I have native web browsing and access to most recent news. What are we analyzing today?"}
     ]
 
 
@@ -61,7 +74,7 @@ def fetch_local_database(symbols, search_query):
 
     news_query = """query GetContext($q: String!) { askAiNews(question: $q, limit: 5) { headline, summary, url } }"""
     try:
-        res = requests.post(API_URL, json={"query": news_query, "variables": {"q": search_query}})
+        res = requests.post(DB_API_URL, json={"query": news_query, "variables": {"q": search_query}}, timeout=10)
         news = res.json().get("data", {}).get("askAiNews", [])
         if news:
             context_string += f"NEWS FOR '{search_query}':\n" + "\n".join([f"- {a['headline']} : {a['summary']}" for a in news]) + "\n\n"
@@ -70,9 +83,11 @@ def fetch_local_database(symbols, search_query):
 
     # there may be multiple symbols mentioned
     for sym in symbols:
+        db_price_symbol = PRICE_TICKER_MAP.get(sym.upper(), sym.upper())
+
         price_query = """query GetPrices($sym: String!) { getLatestPrices(symbol: $sym, limit: 5) { time, price, volume } }"""
         try:
-            res = requests.post(API_URL, json={"query": price_query, "variables": {"sym": sym}})
+            res = requests.post(DB_API_URL, json={"query": price_query, "variables": {"sym": db_price_symbol}})
             prices = res.json().get("data", {}).get("getLatestPrices", [])
             if prices:
                 context_string += f"LAST PRICES FOR {sym}:\n" + "\n".join([f"- {p['time']} | ${p['price']} | Vol: {p['volume']}" for p in prices]) + "\n\n"
@@ -82,9 +97,110 @@ def fetch_local_database(symbols, search_query):
     return context_string if context_string else "No specific data found in local DB"
 
 
+# you can replace all this with your search method of choice
+def browser_search(query, num_results=3):
+    # first search price
+    ticker = None
+    url = "https://finnhub.io/api/v1/search"
+
+    try:
+        lookup = requests.get(
+            url,
+            params={
+                "q": query.split()[0],
+                "token": FINNHUB_API_KEY
+            },
+            timeout=5
+        ).json()
+
+        if lookup.get("result"):
+            ticker = lookup["result"][0]["symbol"]
+
+    except Exception:
+        pass
+
+    price_info = ""
+    if ticker:
+        url = "https://finnhub.io/api/v1/quote"
+
+        try:
+            quote = requests.get(
+                url,
+                params={
+                    "symbol": ticker,
+                    "token": FINNHUB_API_KEY
+                }
+            ).json()
+
+            if quote.get("c") and quote.get("c") != 0:
+                price_info = (
+                    f"LIVE PRICE ({ticker})\n"
+                    f"Current: ${quote.get('c')}\n"
+                    f"High: ${quote.get('h')}\n"
+                    f"Low: ${quote.get('l')}\n\n"
+                )
+
+        except Exception:
+            pass
+
+
+    # then search some news
+    url = "https://google.serper.dev/news"
+
+    payload = json.dumps({
+        "q": query,
+        "num": num_results,
+    })
+
+    headers = {
+        "X-API-KEY": SERPER_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+
+    try:
+        response = requests.post(url, headers=headers, data=payload)
+        data = response.json()
+
+        results = []
+        articles = data.get("news", []) or data.get("organic", [])
+
+        for r in articles[:num_results]:
+            results.append(
+                f"{r.get('title', '')}\n"
+                f"{r.get('snippet', '')}\n"
+                f"Source: {r.get('link', '')}\n"
+            )
+
+        print("Debug print results browser search:\n", price_info + "\n".join(results))
+
+        return price_info + "\n".join(results)
+
+    except Exception as e:
+        return f"Search error: {e}"
+
+
+
 # how exactly our llm can call the function
 TOOLS = [
-    {"type": "browser_search"},
+    # {"type": "browser_search"}, # if you use llm's native browser search tool
+    
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_search",
+            "description": "Search the web for news and information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "num_results": {"type": "integer"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    
     {
         "type": "function",
         "function": {
@@ -129,7 +245,7 @@ if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live n
                     iteration += 1
                     
                     response = client.chat.completions.create(
-                        model="openai/gpt-oss-120b",
+                        model=MODEL_NAME,
                         messages=st.session_state.messages,
                         tools=TOOLS,
                         temperature=0.65
@@ -152,9 +268,13 @@ if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live n
                         for tool_call in response_message.tool_calls:
                             if tool_call.function.name == "fetch_local_database":
                                 args = json.loads(tool_call.function.arguments)
+
+                                symbols_arg = args.get("symbols", [])
+                                if isinstance(symbols_arg, str):
+                                    symbols_arg = [symbols_arg]
                                 
                                 st.toast(f"Assistant requested DB fetch for: {args.get('symbols')} & '{args.get('search_query')}'")
-                                db_results = fetch_local_database(args.get("symbols", []), args.get("search_query", prompt))
+                                db_results = fetch_local_database(symbols_arg, args.get("search_query", prompt))
                                 
                                 # we inject this as a message but it will not be visible since its role is "tool"
                                 st.session_state.messages.append({
@@ -163,13 +283,18 @@ if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live n
                                     "name": tool_call.function.name,
                                     "content": db_results
                                 })
-                            else:
-                                # catch-all for other tools if model doesn't yet want to answer
+                            elif tool_call.function.name == "browser_search":
+                                # args will have 'query' and 'num_results' fields based on our tool definition
+                                args = json.loads(tool_call.function.arguments)
+
+                                st.toast(f"Assistant searching web for: {args.get('query')}")
+                                results = browser_search(args.get("query"), args.get("num_results", 3))
+
                                 st.session_state.messages.append({
                                     "role": "tool",
                                     "tool_call_id": tool_call.id,
-                                    "name": tool_call.function.name,
-                                    "content": "Tool executed successfully"
+                                    "name": "browser_search",
+                                    "content": results
                                 })
                         
                         # after getting the db results, we redo a prompt to use the info
@@ -200,3 +325,4 @@ if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live n
             except Exception as e:
                 # global catch for any weird api errors, connection drops, or rate limits
                 st.error(f"Something went wrong: {e}")
+                # st.error(f"Something went wrong")

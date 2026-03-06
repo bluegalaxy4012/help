@@ -49,7 +49,7 @@ services:
     build: ./ingestor
     environment:
       - KAFKA_BROKER=kafka:9092
-      - FINNHUB_API_KEY=d6iu3jhr01qleu95it4gd6iu3jhr01qleu95it50
+      - FINNHUB_API_KEY=xxxxxxxxxxxxx
     depends_on:
       - kafka
 
@@ -59,7 +59,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - KAFKA_BROKER=kafka:9092
-      - FINNHUB_API_KEY=d6iu3jhr01qleu95it4gd6iu3jhr01qleu95it50
+      - FINNHUB_API_KEY=xxxxxxxxxxxxx
       - DB_HOST=timescaledb
       - DB_PORT=5432
       - DB_USER=postgres
@@ -89,8 +89,13 @@ services:
     ports:
       - "8501:8501"
     environment:
+      - PYTHONUNBUFFERED=1
       - GRAPHQL_API_URL=http://api:8888/graphql
-      - LLM_API_KEY=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
+      - LLM_API_KEY=xxxxxxxxxxxxx
+      - LLM_PROVIDER_API_URL=https://openrouter.ai/api/v1
+      - MODEL_NAME=arcee-ai/trinity-large-preview:free
+      - SERPER_API_KEY=xxxxxxxxxxxxx
+      - FINNHUB_API_KEY=xxxxxxxxxxxxx
     depends_on:
       - api
 
