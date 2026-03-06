@@ -14,9 +14,7 @@ DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASS = os.environ.get("DB_PASS", "secretpostgres")
 DB_NAME = os.environ.get("DB_NAME", "db")
 
-print("Loading Embedding Model (all-MiniLM-L6-v2 for now)")
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-print("Model loaded")
 
 def get_db_connection():
     return psycopg2.connect(
@@ -42,7 +40,7 @@ def consume_prices():
     batch_buffer = []
     BATCH_SIZE = 100
 
-    print("Started listening to raw_prices topic")
+    print("Started listening to raw_prices topic", flush=True)
     
     try:
         while True:
@@ -55,14 +53,14 @@ def consume_prices():
                 continue
             
             if msg.error():
-                print(f"Price Consumer Error: {msg.error()}")
+                print(f"Price Consumer Error: {msg.error()}", flush=True)
                 continue
 
             try:
                 data = json.loads(msg.value().decode('utf-8'))
                 batch_buffer.append((data['time'], data['symbol'], data['price'], data['volume']))
             except Exception as e:
-                print(f"Error parsing price object message: {e}")
+                print(f"Error parsing price object message: {e}", flush=True)
 
             if len(batch_buffer) >= BATCH_SIZE:
                 insert_price_batch(conn, cursor, batch_buffer)
@@ -77,9 +75,9 @@ def insert_price_batch(conn, cursor, batch):
     try:
         execute_values(cursor, query, batch)
         conn.commit()
-        print(f"[PRICES DB] Inserted batch of {len(batch)} prices")
+        print(f"[PRICES DB] Inserted batch of {len(batch)} prices", flush=True)
     except Exception as e:
-        print(f"[PRICES DB ERROR] Failed to insert prices: {e}")
+        print(f"[PRICES DB ERROR] Failed to insert prices: {e}", flush=True)
         conn.rollback()
 
 
@@ -91,7 +89,7 @@ def consume_news():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    print("Started listening to financial_news topic")
+    print("Started listening to financial_news topic", flush=True)
     
     try:
         while True:
@@ -123,10 +121,10 @@ def consume_news():
                 ))
                 conn.commit()
 
-                # print(f"[NEWS DB] Vectorized & Saved: {news['headline'][:20]}...")
+                # print(f"[NEWS DB] Vectorized & Saved: {news['headline'][:20]}...", flush=True)
             
             except Exception as e:
-                print(f"Error processing news object message: {e}")
+                print(f"Error processing news object message: {e}", flush=True)
                 conn.rollback()
 
     finally:
@@ -137,7 +135,7 @@ def consume_news():
 
 
 if __name__ == '__main__':
-    print("Starting Python Consumers")
+    print("Starting Python Consumers", flush=True)
     
     t1 = threading.Thread(target=consume_prices, daemon=True)
     t2 = threading.Thread(target=consume_news, daemon=True)
@@ -149,4 +147,4 @@ if __name__ == '__main__':
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("Shutting down consumers")
+        print("Shutting down consumers", flush=True)

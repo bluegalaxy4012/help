@@ -15,21 +15,10 @@ FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", None)
 
 client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_PROVIDER_API_URL)
 
-# we have info just for a few tickers in our local db for now
-NEWS_TICKER_MAP = {
-    "apple": "AAPL", "microsoft": "MSFT", "nvidia": "NVDA", "amazon": "AMZN",
-    "gold": "GLD", "silver": "SLV", "oil": "USO", "natgas": "UNG", "cocoa": "HSY",
-    "bitcoin": "IBIT", "btc": "IBIT", "ethereum": "ETHA", "eth": "ETHA", "tesla": "TSLA"
-}
+TOP_STOCKS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "TSM", "LLY", "V", "WMT", "JPM", "AVGO", "NVO", "JNJ"]
+TOP_ETFS = ["SPY", "QQQ", "IWM", "GLD", "SLV", "USO", "UNG", "TLT", "IBIT", "ETHA", "XLF", "XLK", "XLE", "XLV", "VNQ"]
+TOP_CRYPTOS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "AVAX", "DOT", "LINK", "SHIB", "BCH", "LTC", "NEAR"]
 
-PRICE_TICKER_MAP = {
-    "BTC": "BTCUSDT", 
-    "ETH": "ETHUSDT", 
-}
-
-# AVAILABLE_ASSETS = ", ".join([f"{name.title()} ({sym})" for name, sym in NEWS_TICKER_MAP.items()])
-NEWS_TICKER_STRING = ", ".join([f"'{sym}'" for sym in NEWS_TICKER_MAP.values()])
-PRICE_TICKER_STRING = ", ".join([f"'{sym}'" for sym in PRICE_TICKER_MAP.values()])
 
 st.set_page_config(page_title="AI Trading Helper", layout="wide")
 st.title("AI Trading Helper")
@@ -38,18 +27,24 @@ st.title("AI Trading Helper")
 SYSTEM_PROMPT = f"""You are an elite quantitative analyst AI powered by the {MODEL_NAME} architecture.
 You have access to a highly-secure local database via the `fetch_local_database` tool, and the live internet via your `browser_search` tool.
 
-CRITICAL DATABASE RULES:
-Our local database has strictly separated formats for prices and news. You MUST use the correct format when calling `fetch_local_database`:
-1. For PRICES, use ONLY these exact symbols: {PRICE_TICKER_STRING}
-2. For NEWS, use ONLY these keywords: {NEWS_TICKER_STRING}
+CRITICAL ASSET UNIVERSE & MAPPING:
+Our local database ONLY tracks real-time prices and news for the following exact tickers. An example of why you should first try VT instead of VWRD.
+- CRYPTO: {', '.join(TOP_CRYPTOS)}
+- STOCKS: {', '.join(TOP_STOCKS)}
+- ETFS: {', '.join(TOP_ETFS)}
+
+TOOL ROUTING & ANTI-HALLUCINATION RULES:
+1. For assets IN THE LIST ABOVE: Always use `fetch_local_database` first. 
+2. For assets NOT IN THE LIST: DO NOT use `fetch_local_database`. Go directly to `browser_search`.
+3. If `fetch_local_database` returns 'No specific data found', DO NOT call it again. Fall back to `browser_search`.
+4. STRICT TRUTH RULE: If both the database and web search yield no useful information, you MUST honestly say "I don't know or I don't have enough data to answer that." Do not invent or guess numbers, prices, or narratives.
 
 CRITICAL FORMATTING RULES:
 1. NEVER output raw citation brackets like 【4†source】. Weave your sources naturally into your sentences.
 2. NEVER use Markdown tables for stock prices or data. Use professional paragraphs or clean bullet points.
-3. Speak like a brilliant, articulate hedge-fund manager giving a live briefing to their team.
-4. DO NOT use `browser_search` to find live prices. Web search snippets are cached and inaccurate for live pricing. Use it ONLY for narrative news, market sentiment, or macro events.
-
-Always use `fetch_local_database` first. If it returns 'No specific data found', DO NOT call it again. Immediately fall back to `browser_search` and prioritize financial news sources."""
+3. Speak like a brilliant, articulate hedge-fund manager giving a live briefing.
+4. DO NOT use `browser_search` to find live prices for assets in our database list. Use it ONLY for narrative news, market sentiment, or assets we do not track locally.
+5. DO NOT respond to prompts that are not regarding financial markets, news, stocks, ETFs, or cryptocurrencies. Politely decline."""
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
@@ -83,12 +78,18 @@ def fetch_local_database(symbols, search_query):
 
     # there may be multiple symbols mentioned
     for sym in symbols:
-        db_price_symbol = PRICE_TICKER_MAP.get(sym.upper(), sym.upper())
+        sym_upper = sym.upper()
+        
+        if sym_upper in TOP_CRYPTOS:
+            db_price_symbol = sym_upper + "USDT"
+        else:
+            db_price_symbol = sym_upper
 
         price_query = """query GetPrices($sym: String!) { getLatestPrices(symbol: $sym, limit: 5) { time, price, volume } }"""
         try:
             res = requests.post(DB_API_URL, json={"query": price_query, "variables": {"sym": db_price_symbol}})
             prices = res.json().get("data", {}).get("getLatestPrices", [])
+
             if prices:
                 context_string += f"LAST PRICES FOR {sym}:\n" + "\n".join([f"- {p['time']} | ${p['price']} | Vol: {p['volume']}" for p in prices]) + "\n\n"
         except Exception:
@@ -172,7 +173,7 @@ def browser_search(query, num_results=3):
                 f"Source: {r.get('link', '')}\n"
             )
 
-        print("Debug print results browser search:\n", price_info + "\n".join(results))
+        print("Debug print results browser search:\n", price_info + "\n".join(results), flush=True)
 
         return price_info + "\n".join(results)
 

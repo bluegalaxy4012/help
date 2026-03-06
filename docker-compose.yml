@@ -33,23 +33,11 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./db-init:/docker-entrypoint-initdb.d
 
-
-  # mongodb:
-  #   image: mongo:8.2.5
-  #   ports:
-  #     - "27018:27017" # temporary port mapping for dev
-  #   environment:
-  #     MONGO_INITDB_ROOT_USERNAME: mongodb
-  #     MONGO_INITDB_ROOT_PASSWORD: secretmongodb
-  #   volumes:
-  #     - mongodb-data:/data/db
-
-
   go-ingestor:
     build: ./ingestor
     environment:
       - KAFKA_BROKER=kafka:9092
-      - FINNHUB_API_KEY=xxxxxxxxxxxxx
+      - FINNHUB_API_KEY=xxxxxx
     depends_on:
       - kafka
 
@@ -57,9 +45,8 @@ services:
   python-consumer:
     build: ./consumer
     environment:
-      - PYTHONUNBUFFERED=1
       - KAFKA_BROKER=kafka:9092
-      - FINNHUB_API_KEY=xxxxxxxxxxxxx
+      - FINNHUB_API_KEY=xxxxxx
       - DB_HOST=timescaledb
       - DB_PORT=5432
       - DB_USER=postgres
@@ -69,11 +56,24 @@ services:
       - kafka
       - timescaledb
 
+  python-alerter:
+    build: ./consumer
+    command: python alerter.py
+    environment:
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASS=secretpostgres
+      - DB_NAME=db
+    depends_on:
+      - timescaledb
+
 
   api:
     build: ./api
-    ports:
-      - "8888:8888"
+    # for testing endpoints
+    # ports:
+    #   - "8888:8888"
     environment:
       - DB_HOST=timescaledb
       - DB_PORT=5432
@@ -89,13 +89,12 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - PYTHONUNBUFFERED=1
       - GRAPHQL_API_URL=http://api:8888/graphql
-      - LLM_API_KEY=xxxxxxxxxxxxx
+      - LLM_API_KEY=xxxxxx
       - LLM_PROVIDER_API_URL=https://openrouter.ai/api/v1
       - MODEL_NAME=arcee-ai/trinity-large-preview:free
-      - SERPER_API_KEY=xxxxxxxxxxxxx
-      - FINNHUB_API_KEY=xxxxxxxxxxxxx
+      - SERPER_API_KEY=xxxxxx
+      - FINNHUB_API_KEY=xxxxxx
     depends_on:
       - api
 
@@ -103,4 +102,3 @@ services:
 volumes:
   kafka-data:
   postgres-data:
-  # mongodb-data:

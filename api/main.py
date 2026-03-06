@@ -19,6 +19,46 @@ def get_db():
     return psycopg2.connect(host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASS, dbname=DB_NAME)
 
 @strawberry.type
+class AlertObject:
+    id: int
+    symbol: str
+    price_change_percent: float
+    timeframe_hours: float
+
+@strawberry.type
+class Mutation:
+    @strawberry.mutation
+    def create_alert(
+        self, 
+        symbol: str, 
+        price_change_percent: float, 
+        timeframe_hours: float, 
+        volume_multiplier: float = 1.0
+    ) -> AlertObject:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # for now uid is 0 since no auth
+        query = """
+            INSERT INTO active_alerts (user_id, symbol, price_change_pct, timeframe_hours, volume_multiplier)
+            VALUES (0, %s, %s, %s, %s) RETURNING id;
+        """
+        cursor.execute(query, (symbol.upper(), price_change_percent, timeframe_hours, volume_multiplier))
+        alert_id = cursor.fetchone()[0]
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return AlertObject(
+            id=alert_id, 
+            symbol=symbol.upper(), 
+            price_change_percent=price_change_percent, 
+            timeframe_hours=timeframe_hours
+        )
+
+
+@strawberry.type
 class PriceObject:
     time: str
     symbol: str
@@ -35,7 +75,7 @@ class NewsObject:
 @strawberry.type
 class Query:
     @strawberry.field
-    def get_latest_prices(self, symbol: str, limit: int = 50) -> List[PriceObject]:
+    def get_latest_prices(self, symbol: str, limit: int = 5) -> List[PriceObject]:
         conn = get_db()
         
         cursor = conn.cursor()
@@ -66,7 +106,7 @@ class Query:
 
         return [NewsObject(headline=row[0], summary=row[1], url=row[2], relevance_score=row[3]) for row in rows]
 
-schema = strawberry.Schema(query=Query)
+schema = strawberry.Schema(query=Query, mutation=Mutation)
 app = FastAPI()
 graphql_app = GraphQLRouter(schema)
 app.include_router(graphql_app, prefix="/graphql")

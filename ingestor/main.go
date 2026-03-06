@@ -6,12 +6,32 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Finnhub-Stock-API/finnhub-go/v2"
 	"github.com/gorilla/websocket"
 	"github.com/segmentio/kafka-go"
 )
+
+// ---------------------------------------------
+// THE ASSETS THAT THE MODEL WILL BE AWARE OF
+// ---------------------------------------------
+
+var TopCryptos = []string{
+	"BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX",
+	"AVAX", "DOT", "LINK", "SHIB", "BCH", "LTC", "NEAR",
+}
+
+var TopStocks = []string{
+	"AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "TSM",
+	"LLY", "V", "WMT", "JPM", "AVGO", "NVO", "JNJ",
+}
+
+var TopETFs = []string{
+	"SPY", "VT", "QQQ", "IWM", "GLD", "SLV", "USO", "UNG", "TLT",
+	"IBIT", "ETHA", "XLF", "XLK", "XLE", "XLV", "VNQ",
+}
 
 var pricesWriter *kafka.Writer
 var newsWriter *kafka.Writer
@@ -84,66 +104,128 @@ func pushToKafka(writer *kafka.Writer, key string, value interface{}) {
 }
 
 func startBinanceWS() {
-	log.Println("Start Binance WS")
+	log.Println("Start Binance WS for Cryptos")
 
-	wsUrl := "wss://stream.binance.com:9443/ws/btcusdt@trade/ethusdt@trade"
-
-	conn, _, err := websocket.DefaultDialer.Dial(wsUrl, nil)
-
-	if err != nil {
-		log.Fatal("Binance WS Dial Error: ", err)
+	var streams []string
+	for _, crypto := range TopCryptos {
+		streams = append(streams, strings.ToLower(crypto)+"usdt@trade") // binance format
 	}
-	defer conn.Close()
+
+	wsUrl := "wss://stream.binance.com:9443/ws/" + strings.Join(streams, "/")
 
 	for {
-		_, message, err := conn.ReadMessage()
-
+		conn, _, err := websocket.DefaultDialer.Dial(wsUrl, nil)
 		if err != nil {
-			log.Println("Binance Read Error:", err)
-			return
+			log.Println("Binance WS Dial Error: ", err)
+			time.Sleep(6 * time.Second)
+			continue
 		}
 
-		var rawJson map[string]interface{}
-		json.Unmarshal(message, &rawJson)
+		for {
+			_, message, err := conn.ReadMessage()
 
-		// log.Println(rawJson)
+			if err != nil {
+				log.Println("Binance Read Error:", err)
+				conn.Close()
+				break
+			}
 
-		// unix epoch float64 miliseconds to iso-8601 datetime string, with milliseconds
-		datetime := time.Unix(0, int64(rawJson["E"].(float64))*int64(time.Millisecond)).UTC().Format("2006-01-02T15:04:05.000Z07:00")
+			var rawJson map[string]interface{}
+			json.Unmarshal(message, &rawJson)
 
-		// strings to floats
-		var price, volume float64
-		fmt.Sscanf(rawJson["p"].(string), "%f", &price)
-		fmt.Sscanf(rawJson["q"].(string), "%f", &volume)
+			// log.Println(rawJson)
+			if eType, ok := rawJson["e"].(string); !ok || eType != "trade" {
+				continue
+			}
 
-		var symbol string
-		symbol = rawJson["s"].(string)
+			// unix epoch float64 miliseconds to iso-8601 datetime string, with milliseconds
+			datetime := time.Unix(0, int64(rawJson["E"].(float64))*int64(time.Millisecond)).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 
-		priceObject := PriceObject{
-			Time:   datetime,
-			Symbol: symbol,
-			Price:  price,
-			Volume: volume,
+			// strings to floats
+			var price, volume float64
+			fmt.Sscanf(rawJson["p"].(string), "%f", &price)
+			fmt.Sscanf(rawJson["q"].(string), "%f", &volume)
+
+			var symbol string
+			symbol = rawJson["s"].(string)
+
+			priceObject := PriceObject{
+				Time:   datetime,
+				Symbol: symbol,
+				Price:  price,
+				Volume: volume,
+			}
+
+			// log.Println(priceObject)
+			pushToKafka(pricesWriter, symbol, priceObject)
 		}
 
-		// log.Println(priceObject)
-		pushToKafka(pricesWriter, symbol, priceObject)
 	}
+}
+
+func startFinnhubWS() {
+	log.Println("Start Finnhub WS for Stocks and ETFs")
+
+	apiKey := os.Getenv("FINNHUB_API_KEY")
+	url := fmt.Sprintf("wss://ws.finnhub.io?token=%s", apiKey)
+
+	allEquities := append(TopStocks, TopETFs...)
+
+	for {
+		conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+		if err != nil {
+			log.Println("Finnhub WS dial error: ", err)
+			time.Sleep(6 * time.Second)
+			continue
+		}
+
+		for _, t := range allEquities {
+			subMsg := fmt.Sprintf(`{"type":"subscribe","symbol":"%s"}`, t)
+			conn.WriteMessage(websocket.TextMessage, []byte(subMsg))
+		}
+
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				log.Println("Finnhub WS read error: ", err)
+				conn.Close()
+				break
+			}
+
+			var rawJson map[string]interface{}
+			json.Unmarshal(message, &rawJson)
+
+			if data, ok := rawJson["data"].([]interface{}); ok {
+				for _, item := range data {
+					trade := item.(map[string]interface{})
+					// datetime := time.UnixMilli(int64(trade["t"].(float64))).UTC().Format("2006-01-02T15:04:05.000Z07:00")
+					datetime := time.Unix(0, int64(trade["t"].(float64))*int64(time.Millisecond)).UTC().Format("2006-01-02T15:04:05.000Z07:00")
+
+					pushToKafka(pricesWriter, trade["s"].(string), PriceObject{
+						Time:   datetime,
+						Symbol: trade["s"].(string),
+						Price:  trade["p"].(float64),
+						Volume: trade["v"].(float64),
+					})
+				}
+			}
+
+		}
+
+	}
+
 }
 
 func startNewsScraper() {
 	log.Println("Start News Scraper")
 
 	apiKey := os.Getenv("FINNHUB_API_KEY")
-	if apiKey == "" {
-		apiKey = "d6iu3jhr01qleu95it4gd6iu3jhr01qleu95it50"
-	}
 
 	cfg := finnhub.NewConfiguration()
 	cfg.AddDefaultHeader("X-Finnhub-Token", apiKey)
 	finnhubClient := finnhub.NewAPIClient(cfg)
 
-	tickers := []string{"NVDA", "AAPL", "MSFT", "AMZN", "GLD", "SLV", "USO", "UNG", "HSY", "IBIT", "ETHA"}
+	tickers := append(TopStocks, TopETFs...)
 	readUrls := map[string]bool{}
 
 	for {
@@ -153,7 +235,7 @@ func startNewsScraper() {
 			news, _, err := finnhubClient.DefaultApi.CompanyNews(context.Background()).Symbol(ticker).From(today).To(today).Execute()
 
 			if err != nil {
-				log.Printf("Finnhub SDK error for %s: %v", ticker, err)
+				// log.Printf("Finnhub SDK error for %s: %v", ticker, err)
 				continue
 			}
 
@@ -174,10 +256,12 @@ func startNewsScraper() {
 						Tickers:     []string{ticker},
 					}
 
-					log.Println(newsObject)
+					// log.Println(newsObject)
 					pushToKafka(newsWriter, "", newsObject)
 				}
 			}
+
+			time.Sleep(1 * time.Second)
 		}
 
 		time.Sleep(5 * time.Minute)
@@ -191,6 +275,7 @@ func main() {
 	initKafkaWriters()
 
 	go startBinanceWS()
+	go startFinnhubWS()
 	go startNewsScraper()
 
 	select {}

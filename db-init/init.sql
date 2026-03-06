@@ -22,3 +22,15 @@ CREATE TABLE financial_news (
 );
 
 CREATE INDEX ON financial_news USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+
+CREATE TABLE IF NOT EXISTS active_alerts (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER DEFAULT 0,
+    symbol VARCHAR(15) NOT NULL,
+    price_change_percent NUMERIC NOT NULL,
+    timeframe_hours NUMERIC NOT NULL,
+    volume_multiplier NUMERIC DEFAULT 1.0,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
