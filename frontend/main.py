@@ -83,7 +83,7 @@ if "messages" not in st.session_state:
 # render actual previous messages
 for msg in st.session_state.messages:
     if msg["role"] not in ["system", "tool"]:
-        if msg.get("content"):
+        if msg.get("content") and not msg.get("tool_calls"):
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
@@ -106,7 +106,7 @@ def fetch_local_database(symbols, search_query):
     for sym in symbols:
         sym_upper = sym.upper()
         
-        if sym_upper in TOP_CRYPTOS:
+        if sym_upper in CRYPTO_NAMES.keys():
             db_price_symbol = sym_upper + "USDT"
         else:
             db_price_symbol = sym_upper
@@ -386,11 +386,12 @@ if prompt := st.chat_input("Ask about macroeconomics, assets, live news or set a
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Assistant using tools..."):
+        with st.status("Analyzing request...", expanded=True) as status:
             try:
                 # it can use the tools over and over again
                 MAX_ITERATIONS = 5
                 iteration = 0
+                clean_answer = ""
                 
                 while iteration < MAX_ITERATIONS:
                     iteration += 1
@@ -399,7 +400,7 @@ if prompt := st.chat_input("Ask about macroeconomics, assets, live news or set a
                         model=MODEL_NAME,
                         messages=st.session_state.messages,
                         tools=TOOLS,
-                        temperature=0.65
+                        temperature=0.7
                     )
                     
                     response_message = response.choices[0].message
@@ -424,7 +425,8 @@ if prompt := st.chat_input("Ask about macroeconomics, assets, live news or set a
                                 if isinstance(symbols_arg, str):
                                     symbols_arg = [symbols_arg]
                                 
-                                st.toast(f"Assistant requested DB fetch for: {args.get('symbols')} & '{args.get('search_query')}'")
+                                # Replaced toast with a persistent log inside the status box
+                                st.write(f"Fetching local DB for: {symbols_arg} & '{args.get('search_query')}'")
                                 db_results = fetch_local_database(symbols_arg, args.get("search_query", prompt))
                                 
                                 # we inject this as a message but it will not be visible since its role is "tool"
@@ -436,10 +438,9 @@ if prompt := st.chat_input("Ask about macroeconomics, assets, live news or set a
                                 })
 
                             elif tool_call.function.name == "browser_search":
-                                # args will have 'query' and 'num_results' fields based on our tool definition
                                 args = json.loads(tool_call.function.arguments)
 
-                                st.toast(f"Assistant searching web for: {args.get('query')}")
+                                st.write(f"Searching the web for: {args.get('query')}")
                                 results = browser_search(args.get("query"), args.get("num_results", 3))
 
                                 st.session_state.messages.append({
@@ -452,7 +453,7 @@ if prompt := st.chat_input("Ask about macroeconomics, assets, live news or set a
                             elif tool_call.function.name == "create_alert":
                                 args = json.loads(tool_call.function.arguments)
                                 
-                                st.toast(f"Setting alert for {args.get('symbol')}")
+                                st.write(f"Setting alert for {args.get('symbol')}...")
                                 result = create_database_alert(
                                     st.session_state.user_id,
                                     args.get("symbol"),
@@ -470,7 +471,7 @@ if prompt := st.chat_input("Ask about macroeconomics, assets, live news or set a
                                 })
 
                             elif tool_call.function.name == "list_alerts":
-                                st.toast(f"Assistant requested list of active alerts")
+                                st.write("Fetching active alerts...")
                                 results = get_database_alerts(st.session_state.user_id)
 
                                 st.session_state.messages.append({
@@ -484,7 +485,7 @@ if prompt := st.chat_input("Ask about macroeconomics, assets, live news or set a
                                 args = json.loads(tool_call.function.arguments)
                                 alert_id = args.get("alert_id")
 
-                                st.toast(f"Assistant requested deletion of alert ID: {alert_id}")
+                                st.write(f"Deleting alert ID {alert_id}...")
                                 results = delete_database_alert(st.session_state.user_id, alert_id)
 
                                 st.session_state.messages.append({
@@ -495,31 +496,30 @@ if prompt := st.chat_input("Ask about macroeconomics, assets, live news or set a
                                 })
                         
                         # after getting the db results, we redo a prompt to use the info
-                        # the loop restarts here so the AI can read the injected tool messages
-                        continue 
+                        continue
                     
                     raw_answer = response_message.content
                     if raw_answer:
-                        # it sometimes hallucinates source/reference brackets and also escape $ so we don't start latex mode
-
                         clean_answer = re.sub(r'【.*?】', '', raw_answer)
                         clean_answer = clean_answer.replace('$', r'\$')
 
-                        st.markdown(clean_answer)
-                        
-                        # update the last message in history to be the clean version so we don't give garbage back to model
+                        # update the last message in history to be the clean version
                         st.session_state.messages[-1]["content"] = clean_answer
                         
-                        # break the loop because we got our final text answer
-                        break 
+                        # Collapse the status box and change title to success
+                        status.update(label="Done.", state="complete", expanded=False)
+                        break
                     
                     # safety break if it returns no text and no tools
-                    break 
+                    status.update(label="Finished.", state="complete", expanded=False)
+                    break
                     
                 if iteration >= MAX_ITERATIONS:
-                    st.warning("Assistant reached maximum thinking capacity")
+                    status.update(label="Reached maximum thinking capacity.", state="error")
             
             except Exception as e:
-                # global catch for any weird api errors, connection drops, or rate limits
-                st.error(f"Something went wrong: {e}")
-                # st.error(f"Something went wrong")
+                status.update(label=f"Error: {e}", state="error")
+                # status.update(label="Something went wrong during processing. Please try again.", state="error")
+
+        if clean_answer:
+            st.markdown(clean_answer)
