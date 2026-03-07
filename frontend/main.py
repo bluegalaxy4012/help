@@ -45,6 +45,8 @@ You can manage background monitoring alerts for the user.
 4. If volume is mentioned, ask if they want the alert to trigger OVER or UNDER that multiplier (Default is OVER).
 5. Use `list_alerts` to show currently active monitors.
 6. Use `delete_alert` if the user wants to remove one (you must ask for the exact Alert ID if they don't provide it).
+7. STRICT DIRECTION RULE: Alerts are UNIDIRECTIONAL. A positive percentage tracks ONLY pumps. A negative percentage tracks ONLY drops. You must explicitly tell the user which direction the alert is tracking. NEVER say it tracks "either direction". The same for volume - it must be clear if the user is asking for spikes (over) or droughts (under).
+8. TIMEZONE AWARENESS: All internal system data, price timestamps, and database records operate in pure UTC. If the user asks about market hours, news events, or alert timings, always calculate and provide the answer in UTC so it matches the internal system.
 
 TOOL ROUTING & ANTI-HALLUCINATION RULES:
 1. For assets IN THE LIST ABOVE: Always use `fetch_local_database` first. 
@@ -216,7 +218,12 @@ def create_database_alert(user_id, symbol, percent_change, tf_minutes, vol_mult=
             return f"Failed to set alert: {data['errors'][0]['message']}"
         
         alert_id = data["data"]["createAlert"]["id"]
-        return f"SUCCESS: Alert #{alert_id} created for {symbol.upper()}"
+        
+        # for giving confirmation and context
+        direction_text = f"up by {percent_change}%" if percent_change > 0 else f"down by {abs(percent_change)}%"
+        vol_comparator_text = "over" if vol_over else "under"
+        vol_text = f"with a volume spike of {vol_comparator_text} x{vol_mult}" if vol_mult > 0 else ""
+        return f"SUCCESS: Alert #{alert_id} created for {symbol.upper()}. This alert will trigger if {symbol.upper()} moves {direction_text} within {tf_minutes} minutes {vol_text}."
     
     except Exception as e:
         return f"API Error: {e}"

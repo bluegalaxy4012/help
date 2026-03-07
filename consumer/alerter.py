@@ -47,10 +47,12 @@ def evaluate_alerts():
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute(
-        "SELECT id, user_id, symbol, price_change_percent, timeframe_minutes, volume_multiplier, volume_over, created_at "
-        "FROM alerts WHERE is_active = TRUE;"
-    )
+    cursor.execute("""
+            SELECT id, user_id, symbol, price_change_percent, timeframe_minutes, volume_multiplier, volume_over, created_at 
+            FROM alerts 
+            WHERE is_active = TRUE 
+            AND (last_triggered_at IS NULL OR last_triggered_at <= NOW() - INTERVAL '20 minutes');
+    """) # 20 mins should be customizable but for now it's ok
     alerts = cursor.fetchall()
 
     for alert in alerts:
@@ -192,8 +194,7 @@ def evaluate_alerts():
                 sendAlert(alert_id, user_id, symbol, current_price, reference_price, percent_change, target_percent, actual_vol_display)
 
                 # prevent spam
-                # later will add reactivation after some time
-                cursor.execute("UPDATE alerts SET is_active = FALSE WHERE id = %s;", (alert_id,))
+                cursor.execute("UPDATE alerts SET last_triggered_at = NOW() WHERE id = %s;", (alert_id,))
                 conn.commit()
 
         except Exception as e:

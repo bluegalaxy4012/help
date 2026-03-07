@@ -147,8 +147,8 @@ class Query:
             AlertObject(
                 id=row[0],
                 user_id=user_id,
-                symbol=row[1], 
-                price_change_percent=row[2], 
+                symbol=row[1],
+                price_change_percent=row[2],
                 timeframe_minutes=row[3],
                 volume_multiplier=row[4],
                 volume_over=row[5],
