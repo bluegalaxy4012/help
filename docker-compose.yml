@@ -50,7 +50,7 @@ services:
     build: ./ingestor
     environment:
       - KAFKA_BROKER=kafka:9092
-      - FINNHUB_API_KEY=xxxxxxxxxx
+      - FINNHUB_API_KEY=xxxxxxxxxxxx
     depends_on:
       kafka:
         condition: service_healthy 
@@ -60,7 +60,7 @@ services:
     build: ./consumer
     environment:
       - KAFKA_BROKER=kafka:9092
-      - FINNHUB_API_KEY=xxxxxxxxxx
+      - FINNHUB_API_KEY=xxxxxxxxxxxx
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=postgres
@@ -108,11 +108,11 @@ services:
       - "8501:8501"
     environment:
       - GRAPHQL_API_URL=http://api:8888/graphql
-      - LLM_API_KEY=xxxxxxxxxx
+      - LLM_API_KEY=xxxxxxxxxxxx
       - LLM_PROVIDER_API_URL=https://openrouter.ai/api/v1
       - MODEL_NAME=arcee-ai/trinity-large-preview:free
-      - SERPER_API_KEY=xxxxxxxxxx
-      - FINNHUB_API_KEY=xxxxxxxxxx
+      - SERPER_API_KEY=xxxxxxxxxxxx
+      - FINNHUB_API_KEY=xxxxxxxxxxxx
     depends_on:
       - api
 

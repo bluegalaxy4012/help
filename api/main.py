@@ -21,6 +21,7 @@ def get_db():
 @strawberry.type
 class AlertObject:
     id: int
+    user_id: int
     symbol: str
     price_change_percent: float
     timeframe_minutes: int
@@ -31,22 +32,23 @@ class AlertObject:
 class Mutation:
     @strawberry.mutation
     def create_alert(
-        self, 
-        symbol: str, 
-        price_change_percent: float, 
-        timeframe_minutes: int, 
+        self,
+        symbol: str,
+        price_change_percent: float,
+        timeframe_minutes: int,
         volume_multiplier: float = 0.0,
-        volume_over: bool = True
+        volume_over: bool = True,
+        user_id: int = 0,
     ) -> AlertObject:
         conn = get_db()
         cursor = conn.cursor()
         
         # for now uid is 0 since no auth
         query = """
-            INSERT INTO alerts (user_id, symbol, price_change_percent, timeframe_minutes, volume_multiplier)
-            VALUES (0, %s, %s, %s, %s) RETURNING id;
+            INSERT INTO alerts (user_id, symbol, price_change_percent, timeframe_minutes, volume_multiplier, volume_over)
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id;
         """
-        cursor.execute(query, (symbol.upper(), price_change_percent, timeframe_minutes, volume_multiplier))
+        cursor.execute(query, (user_id, symbol.upper(), price_change_percent, timeframe_minutes, volume_multiplier, volume_over))
         alert_id = cursor.fetchone()[0]
         
         conn.commit()
@@ -54,7 +56,8 @@ class Mutation:
         conn.close()
 
         return AlertObject(
-            id=alert_id, 
+            id=alert_id,
+            user_id=user_id,
             symbol=symbol.upper(), 
             price_change_percent=price_change_percent, 
             timeframe_minutes=timeframe_minutes,
@@ -64,12 +67,12 @@ class Mutation:
     
 
     @strawberry.mutation
-    def delete_alert(self, alert_id: int) -> bool:
+    def delete_alert(self, user_id: int, alert_id: int) -> bool:
         conn = get_db()
         cursor = conn.cursor()
 
         # for now uid is 0 since no auth
-        cursor.execute("DELETE FROM alerts WHERE id = %s AND user_id = 0 RETURNING id;", (alert_id,))
+        cursor.execute("DELETE FROM alerts WHERE id = %s AND user_id = %s RETURNING id;", (alert_id, user_id))
         deleted_row = cursor.fetchone()
 
         conn.commit()
@@ -129,25 +132,26 @@ class Query:
         return [NewsObject(headline=row[0], summary=row[1], url=row[2], relevance_score=row[3]) for row in rows]
     
     @strawberry.field
-    def get_alerts(self) -> List[AlertObject]:
+    def get_alerts(self, user_id: int) -> List[AlertObject]:
         conn = get_db()
         cursor = conn.cursor()
 
         # for now uid is 0 since no auth
-        query = "SELECT id, symbol, price_change_percent, timeframe_minutes, volume_multiplier, volume_over FROM alerts WHERE is_active = TRUE AND user_id = 0;"
-        cursor.execute(query)
+        query = "SELECT id, symbol, price_change_percent, timeframe_minutes, volume_multiplier, volume_over FROM alerts WHERE is_active = TRUE AND user_id = %s;"
+        cursor.execute(query, (user_id,))
 
         rows = cursor.fetchall()
         conn.close()
 
         return [
             AlertObject(
-                id=row[0], 
+                id=row[0],
+                user_id=user_id,
                 symbol=row[1], 
                 price_change_percent=row[2], 
                 timeframe_minutes=row[3],
                 volume_multiplier=row[4],
-                volume_over=row[5]
+                volume_over=row[5],
             ) for row in rows
         ]
 

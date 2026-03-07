@@ -2,6 +2,10 @@ import os
 import time
 import psycopg2
 from datetime import datetime, timedelta, timezone
+import hashlib
+import requests
+
+
 
 DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_PORT = os.environ.get("DB_PORT", "5432")
@@ -17,19 +21,40 @@ SLEEP_SECONDS = 5
 def get_db():
     return psycopg2.connect(host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASS, dbname=DB_NAME)
 
+# you can replace all this with the alerting method of choice
+def sendAlert(alert_id, user_id, symbol, current_price, reference_price, percent_change, target_percent, actual_vol_display):
+    # print(
+    #     f"[ALERT] Alert #{alert_id} triggered for User {user_id}! {symbol} — current ${current_price:.2f} vs ref ${reference_price:.2f} "
+    #     f"-> {percent_change:.2f}% (Target: {target_percent}%) | Vol Mult: {actual_vol_display}",
+    #     flush=True,
+    # )
+
+    # i use this for now, user should be suscribed to this hash topic
+    alert_hash = hashlib.md5(f"helpalerts-{user_id}".encode()).hexdigest()
+    if actual_vol_display != "N/A":
+        message = f"{symbol} | {percent_change:.3f}% | x{actual_vol_display}"
+    else:
+        message = f"{symbol} | {percent_change:.3f}%"
+
+    try:
+        requests.post(f"https://ntfy.sh/{alert_hash}", data=message, headers={ "Title": f"Alert #{alert_id}" })
+    except Exception as e:
+        print(f"Failed to send alert for Alert #{alert_id}: {e}", flush=True)
+
+
 
 def evaluate_alerts():
     conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT id, symbol, price_change_percent, timeframe_minutes, volume_multiplier, volume_over, created_at "
+        "SELECT id, user_id, symbol, price_change_percent, timeframe_minutes, volume_multiplier, volume_over, created_at "
         "FROM alerts WHERE is_active = TRUE;"
     )
     alerts = cursor.fetchall()
 
     for alert in alerts:
-        alert_id, symbol, target_percent, tf_minutes, vol_mult, vol_over, created_at = alert
+        alert_id, user_id, symbol, target_percent, tf_minutes, vol_mult, vol_over, created_at = alert
 
         # some casting problems with python-postgres
         target_percent = float(target_percent) if target_percent is not None else 0.0
@@ -163,13 +188,11 @@ def evaluate_alerts():
 
             if alert_condition_met and vol_condition_met:
                 actual_vol_display = f"{actual_vol_mult:.2f}" if isinstance(actual_vol_mult, float) else actual_vol_mult
-                print(
-                    f"[ALERT] Alert #{alert_id} triggered! {symbol} — current {current_price} vs ref {reference_price} "
-                    f"-> {percent_change:.2f}% (Target: {target_percent}%) | Vol Mult: {actual_vol_display}",
-                    flush=True,
-                )
+
+                sendAlert(alert_id, user_id, symbol, current_price, reference_price, percent_change, target_percent, actual_vol_display)
 
                 # prevent spam
+                # later will add reactivation after some time
                 cursor.execute("UPDATE alerts SET is_active = FALSE WHERE id = %s;", (alert_id,))
                 conn.commit()
 

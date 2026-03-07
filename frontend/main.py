@@ -23,6 +23,10 @@ TOP_CRYPTOS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "AVAX", 
 st.set_page_config(page_title="AI Trading Helper", layout="wide")
 st.title("AI Trading Helper")
 
+# for now since no auth, mock login
+if "user_id" not in st.session_state:
+    st.session_state.user_id = 0
+
 
 SYSTEM_PROMPT = f"""You are an elite quantitative analyst AI powered by the {MODEL_NAME} architecture.
 You have access to a highly-secure local database via the `fetch_local_database` tool, and the live internet via your `browser_search` tool.
@@ -189,10 +193,10 @@ def browser_search(query, num_results=3):
     except Exception as e:
         return f"Search error: {e}"
 
-def create_database_alert(symbol, percent_change, tf_minutes, vol_mult=0.0, vol_over=True):
+def create_database_alert(user_id, symbol, percent_change, tf_minutes, vol_mult=0.0, vol_over=True):
     mutation = """
-        mutation CreateAlert($sym: String!, $percent: Float!, $mins: Int!, $vol: Float!, $over: Boolean!) {
-            createAlert(symbol: $sym, priceChangePercent: $percent, timeframeMinutes: $mins, volumeMultiplier: $vol, volumeOver: $over) {
+        mutation CreateAlert($sym: String!, $percent: Float!, $mins: Int!, $vol: Float!, $over: Boolean!, $uid: Int!) {
+            createAlert(symbol: $sym, priceChangePercent: $percent, timeframeMinutes: $mins, volumeMultiplier: $vol, volumeOver: $over, userId: $uid) {
                 id
                 symbol
             }
@@ -201,7 +205,7 @@ def create_database_alert(symbol, percent_change, tf_minutes, vol_mult=0.0, vol_
     
     variables = {
         "sym": symbol.upper(), "percent": float(percent_change),
-        "mins": int(tf_minutes), "vol": float(vol_mult), "over": bool(vol_over)
+        "mins": int(tf_minutes), "vol": float(vol_mult), "over": bool(vol_over), "uid": user_id
     }
     
     try:
@@ -218,11 +222,13 @@ def create_database_alert(symbol, percent_change, tf_minutes, vol_mult=0.0, vol_
         return f"API Error: {e}"
 
 
-def get_database_alerts():
-    query = """query { getAlerts { id symbol priceChangePercent timeframeMinutes } }"""
+def get_database_alerts(user_id):
+    query = """query GetAlerts($uid: Int!) { getAlerts(userId: $uid) { id symbol priceChangePercent timeframeMinutes } }"""
+
+    variables = {"uid": user_id}
 
     try:
-        res = requests.post(DB_API_URL, json={"query": query}, timeout=5).json()
+        res = requests.post(DB_API_URL, json={"query": query, "variables": variables}, timeout=5).json()
         alerts = res.get("data", {}).get("getAlerts", [])
 
         if not alerts:
@@ -232,11 +238,13 @@ def get_database_alerts():
     except Exception as e:
         return f"API Error: {e}"
 
-def delete_database_alert(alert_id):
-    mutation = """mutation DeleteAlert($id: Int!) { deleteAlert(alertId: $id) }"""
-    
+def delete_database_alert(user_id, alert_id):
+    mutation = """mutation DeleteAlert($uid: Int!, $id: Int!) { deleteAlert(userId: $uid, alertId: $id) }"""
+
+    variables = {"uid": user_id, "id": alert_id}
+
     try:
-        res = requests.post(DB_API_URL, json={"query": mutation, "variables": {"id": int(alert_id)}}, timeout=5).json()
+        res = requests.post(DB_API_URL, json={"query": mutation, "variables": variables}, timeout=5).json()
 
         success = res.get("data", {}).get("deleteAlert", False)
 
@@ -354,7 +362,7 @@ TOOLS = [
 
 
 # main loop
-if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live news...", key="main_chat_input"):
+if prompt := st.chat_input("Ask about macroeconomics, assets, live news or set alerts...", key="main_chat_input"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -428,6 +436,7 @@ if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live n
                                 
                                 st.toast(f"Setting alert for {args.get('symbol')}")
                                 result = create_database_alert(
+                                    st.session_state.user_id,
                                     args.get("symbol"),
                                     args.get("price_change_percent"),
                                     args.get("timeframe_minutes"),
@@ -444,7 +453,7 @@ if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live n
 
                             elif tool_call.function.name == "list_alerts":
                                 st.toast(f"Assistant requested list of active alerts")
-                                results = get_database_alerts()
+                                results = get_database_alerts(st.session_state.user_id)
 
                                 st.session_state.messages.append({
                                     "role": "tool",
@@ -458,7 +467,7 @@ if prompt := st.chat_input("Ask about macroeconomics, multiple stocks, or live n
                                 alert_id = args.get("alert_id")
 
                                 st.toast(f"Assistant requested deletion of alert ID: {alert_id}")
-                                results = delete_database_alert(alert_id)
+                                results = delete_database_alert(st.session_state.user_id, alert_id)
 
                                 st.session_state.messages.append({
                                     "role": "tool",
