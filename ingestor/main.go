@@ -16,22 +16,22 @@ import (
 )
 
 // ---------------------------------------------
-// THE ASSETS THAT THE MODEL WILL BE AWARE OF
+// THE ASSETS THAT THE MODEL WILL BE AWARE OF (change as you wish)
 // ---------------------------------------------
 
 var TopCryptos = []string{
 	"BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX",
-	"AVAX", "DOT", "LINK", "SHIB", "BCH", "LTC", "NEAR",
+	"AVAX", "DOT", "LINK",
 }
 
 var TopStocks = []string{
 	"AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "TSM",
-	"LLY", "V", "WMT", "JPM", "AVGO", "NVO", "JNJ",
+	"LLY", "V", "JPM", "AVGO",
 }
 
 var TopETFs = []string{
 	"SPY", "VT", "QQQ", "IWM", "GLD", "SLV", "USO", "UNG", "TLT",
-	"IBIT", "ETHA", "XLF", "XLK", "XLE", "XLV", "VNQ",
+	"IBIT", "ETHA", "XLF", "XLK", "XLE", "XLV",
 }
 
 var pricesWriter *kafka.Writer
@@ -211,15 +211,19 @@ func startFinnhubWS() {
 			if data, ok := rawJson["data"].([]interface{}); ok {
 				for _, item := range data {
 					trade := item.(map[string]interface{})
-					// datetime := time.UnixMilli(int64(trade["t"].(float64))).UTC().Format("2006-01-02T15:04:05.000Z07:00")
+
 					datetime := time.Unix(0, int64(trade["t"].(float64))*int64(time.Millisecond)).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 
-					pushToKafka(pricesWriter, trade["s"].(string), PriceObject{
+					priceObject := PriceObject{
 						Time:   datetime,
 						Symbol: trade["s"].(string),
 						Price:  trade["p"].(float64),
 						Volume: trade["v"].(float64),
-					})
+					}
+
+					// log.Println(priceObject)
+
+					pushToKafka(pricesWriter, trade["s"].(string), priceObject)
 				}
 			}
 

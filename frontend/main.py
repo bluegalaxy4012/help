@@ -15,9 +15,9 @@ FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", None)
 
 client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_PROVIDER_API_URL)
 
-TOP_STOCKS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "TSM", "LLY", "V", "WMT", "JPM", "AVGO", "NVO", "JNJ"]
-TOP_ETFS = ["SPY", "QQQ", "IWM", "GLD", "SLV", "USO", "UNG", "TLT", "IBIT", "ETHA", "XLF", "XLK", "XLE", "XLV", "VNQ"]
-TOP_CRYPTOS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "AVAX", "DOT", "LINK", "SHIB", "BCH", "LTC", "NEAR"]
+TOP_STOCKS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "TSM", "LLY", "V", "JPM", "AVGO"]
+TOP_ETFS = ["SPY", "QQQ", "IWM", "GLD", "SLV", "USO", "UNG", "TLT", "IBIT", "ETHA", "XLF", "XLK", "XLE", "XLV"]
+TOP_CRYPTOS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "AVAX", "DOT", "LINK"]
 
 
 st.set_page_config(page_title="AI Trading Helper", layout="wide")

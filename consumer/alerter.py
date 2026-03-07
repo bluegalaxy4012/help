@@ -13,9 +13,9 @@ DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASS = os.environ.get("DB_PASS", "secretpostgres")
 DB_NAME = os.environ.get("DB_NAME", "db")
 
-TOP_CRYPTOS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "AVAX", "DOT", "LINK", "SHIB", "BCH", "LTC", "NEAR"]
+TOP_CRYPTOS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "AVAX", "DOT", "LINK"]
 
-SLEEP_SECONDS = 5
+SLEEP_SECONDS = 8
 
 
 def get_db():
