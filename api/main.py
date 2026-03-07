@@ -13,10 +13,14 @@ DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASS = os.environ.get("DB_PASS", "secretpostgres")
 DB_NAME = os.environ.get("DB_NAME", "db")
 
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+
 
 def get_db():
-    return psycopg2.connect(host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASS, dbname=DB_NAME)
+    return psycopg2.connect(
+        host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASS, dbname=DB_NAME
+    )
+
 
 @strawberry.type
 class AlertObject:
@@ -27,6 +31,7 @@ class AlertObject:
     timeframe_minutes: int
     volume_multiplier: float
     volume_over: bool
+
 
 @strawberry.type
 class Mutation:
@@ -42,15 +47,25 @@ class Mutation:
     ) -> AlertObject:
         conn = get_db()
         cursor = conn.cursor()
-        
+
         # for now uid is 0 since no auth
         query = """
             INSERT INTO alerts (user_id, symbol, price_change_percent, timeframe_minutes, volume_multiplier, volume_over)
             VALUES (%s, %s, %s, %s, %s, %s) RETURNING id;
         """
-        cursor.execute(query, (user_id, symbol.upper(), price_change_percent, timeframe_minutes, volume_multiplier, volume_over))
+        cursor.execute(
+            query,
+            (
+                user_id,
+                symbol.upper(),
+                price_change_percent,
+                timeframe_minutes,
+                volume_multiplier,
+                volume_over,
+            ),
+        )
         alert_id = cursor.fetchone()[0]
-        
+
         conn.commit()
         cursor.close()
         conn.close()
@@ -58,13 +73,12 @@ class Mutation:
         return AlertObject(
             id=alert_id,
             user_id=user_id,
-            symbol=symbol.upper(), 
-            price_change_percent=price_change_percent, 
+            symbol=symbol.upper(),
+            price_change_percent=price_change_percent,
             timeframe_minutes=timeframe_minutes,
             volume_multiplier=volume_multiplier,
-            volume_over=volume_over
+            volume_over=volume_over,
         )
-    
 
     @strawberry.mutation
     def delete_alert(self, user_id: int, alert_id: int) -> bool:
@@ -72,7 +86,10 @@ class Mutation:
         cursor = conn.cursor()
 
         # for now uid is 0 since no auth
-        cursor.execute("DELETE FROM alerts WHERE id = %s AND user_id = %s RETURNING id;", (alert_id, user_id))
+        cursor.execute(
+            "DELETE FROM alerts WHERE id = %s AND user_id = %s RETURNING id;",
+            (alert_id, user_id),
+        )
         deleted_row = cursor.fetchone()
 
         conn.commit()
@@ -90,6 +107,7 @@ class PriceObject:
     price: float
     volume: float
 
+
 @strawberry.type
 class NewsObject:
     headline: str
@@ -97,12 +115,13 @@ class NewsObject:
     url: str
     relevance_score: float
 
+
 @strawberry.type
 class Query:
     @strawberry.field
     def get_latest_prices(self, symbol: str, limit: int = 5) -> List[PriceObject]:
         conn = get_db()
-        
+
         cursor = conn.cursor()
         query = "SELECT time, symbol, price, volume FROM raw_prices WHERE symbol = %s ORDER BY time DESC LIMIT %s;"
         cursor.execute(query, (symbol, limit))
@@ -110,7 +129,10 @@ class Query:
         rows = cursor.fetchall()
         conn.close()
 
-        return [PriceObject(time=str(row[0]), symbol=row[1], price=row[2], volume=row[3]) for row in rows]
+        return [
+            PriceObject(time=str(row[0]), symbol=row[1], price=row[2], volume=row[3])
+            for row in rows
+        ]
 
     @strawberry.field
     def ask_ai_news(self, question: str, limit: int = 3) -> List[NewsObject]:
@@ -129,8 +151,13 @@ class Query:
         rows = cursor.fetchall()
         conn.close()
 
-        return [NewsObject(headline=row[0], summary=row[1], url=row[2], relevance_score=row[3]) for row in rows]
-    
+        return [
+            NewsObject(
+                headline=row[0], summary=row[1], url=row[2], relevance_score=row[3]
+            )
+            for row in rows
+        ]
+
     @strawberry.field
     def get_alerts(self, user_id: int) -> List[AlertObject]:
         conn = get_db()
@@ -152,8 +179,10 @@ class Query:
                 timeframe_minutes=row[3],
                 volume_multiplier=row[4],
                 volume_over=row[5],
-            ) for row in rows
+            )
+            for row in rows
         ]
+
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)
 app = FastAPI()

@@ -6,23 +6,46 @@ import hashlib
 import requests
 
 
-
 DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASS = os.environ.get("DB_PASS", "secretpostgres")
 DB_NAME = os.environ.get("DB_NAME", "db")
 
-TOP_CRYPTOS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "AVAX", "DOT", "LINK"]
+TOP_CRYPTOS = [
+    "BTC",
+    "ETH",
+    "BNB",
+    "SOL",
+    "XRP",
+    "ADA",
+    "DOGE",
+    "TRX",
+    "AVAX",
+    "DOT",
+    "LINK",
+]
 
 SLEEP_SECONDS = 8
 
 
 def get_db():
-    return psycopg2.connect(host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASS, dbname=DB_NAME)
+    return psycopg2.connect(
+        host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASS, dbname=DB_NAME
+    )
+
 
 # you can replace all this with the alerting method of choice
-def sendAlert(alert_id, user_id, symbol, current_price, reference_price, percent_change, target_percent, actual_vol_display):
+def sendAlert(
+    alert_id,
+    user_id,
+    symbol,
+    current_price,
+    reference_price,
+    percent_change,
+    target_percent,
+    actual_vol_display,
+):
     # print(
     #     f"[ALERT] Alert #{alert_id} triggered for User {user_id}! {symbol} — current ${current_price:.2f} vs ref ${reference_price:.2f} "
     #     f"-> {percent_change:.2f}% (Target: {target_percent}%) | Vol Mult: {actual_vol_display}",
@@ -37,33 +60,49 @@ def sendAlert(alert_id, user_id, symbol, current_price, reference_price, percent
         message = f"{symbol} | {percent_change:.3f}%"
 
     try:
-        requests.post(f"https://ntfy.sh/{alert_hash}", data=message, headers={ "Title": f"Alert #{alert_id}" })
+        requests.post(
+            f"https://ntfy.sh/{alert_hash}",
+            data=message,
+            headers={"Title": f"Alert #{alert_id}"},
+        )
     except Exception as e:
         print(f"Failed to send alert for Alert #{alert_id}: {e}", flush=True)
-
 
 
 def evaluate_alerts():
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
             SELECT id, user_id, symbol, price_change_percent, timeframe_minutes, volume_multiplier, volume_over, created_at 
             FROM alerts 
             WHERE is_active = TRUE 
             AND (last_triggered_at IS NULL OR last_triggered_at <= NOW() - INTERVAL '20 minutes');
-    """) # 20 mins should be customizable but for now it's ok
+    """
+    )  # 20 mins should be customizable but for now it's ok
     alerts = cursor.fetchall()
 
     for alert in alerts:
-        alert_id, user_id, symbol, target_percent, tf_minutes, vol_mult, vol_over, created_at = alert
+        (
+            alert_id,
+            user_id,
+            symbol,
+            target_percent,
+            tf_minutes,
+            vol_mult,
+            vol_over,
+            created_at,
+        ) = alert
 
         # some casting problems with python-postgres
         target_percent = float(target_percent) if target_percent is not None else 0.0
         vol_mult = float(vol_mult) if vol_mult is not None else 0.0
 
         if created_at is None:
-            created_at_param = datetime.now(timezone.utc) - timedelta(minutes=tf_minutes if tf_minutes and tf_minutes > 0 else 1)
+            created_at_param = datetime.now(timezone.utc) - timedelta(
+                minutes=tf_minutes if tf_minutes and tf_minutes > 0 else 1
+            )
         else:
             created_at_param = created_at
 
@@ -130,7 +169,6 @@ def evaluate_alerts():
                 recent_sum_dollar = float(recent_sum_dollar or 0.0)
                 recent_count = int(recent_count or 0)
 
-
                 cursor.execute(
                     "SELECT COALESCE(SUM(volume),0), COALESCE(SUM(price * volume),0), COALESCE(COUNT(*),0) "
                     "FROM raw_prices WHERE symbol = %s AND time >= %s AND time < %s;",
@@ -141,12 +179,11 @@ def evaluate_alerts():
                 hist_sum_dollar = float(hist_sum_dollar or 0.0)
                 hist_count = int(hist_count or 0)
 
-                use_dollar = False # if you wish to use dollar volume
+                use_dollar = False  # if you wish to use dollar volume
                 recent_baseline = recent_sum_dollar if use_dollar else recent_sum_vol
                 hist_baseline = hist_sum_dollar if use_dollar else hist_sum_vol
 
-
-                # sanity thresholds 
+                # sanity thresholds
                 MIN_HIST_VOL = 1e-6
                 MIN_HIST_COUNT = 3
                 MIN_RECENT_ABS_VOL = 1e-6
@@ -167,7 +204,6 @@ def evaluate_alerts():
                 else:
                     vol_condition_met = actual_vol_mult <= vol_mult
 
-
                 # just for print
                 if actual_vol_mult == float("inf"):
                     actual_vol_display = "inf (hist nearly 0)"
@@ -177,7 +213,6 @@ def evaluate_alerts():
             else:
                 vol_condition_met = True
                 actual_vol_display = "N/A"
-
 
             alert_condition_met = False
             threshold_factor = 1.0 + (target_percent / 100.0)
@@ -189,12 +224,28 @@ def evaluate_alerts():
                 alert_condition_met = current_price >= threshold_price
 
             if alert_condition_met and vol_condition_met:
-                actual_vol_display = f"{actual_vol_mult:.2f}" if isinstance(actual_vol_mult, float) else actual_vol_mult
+                actual_vol_display = (
+                    f"{actual_vol_mult:.2f}"
+                    if isinstance(actual_vol_mult, float)
+                    else actual_vol_mult
+                )
 
-                sendAlert(alert_id, user_id, symbol, current_price, reference_price, percent_change, target_percent, actual_vol_display)
+                sendAlert(
+                    alert_id,
+                    user_id,
+                    symbol,
+                    current_price,
+                    reference_price,
+                    percent_change,
+                    target_percent,
+                    actual_vol_display,
+                )
 
                 # prevent spam
-                cursor.execute("UPDATE alerts SET last_triggered_at = NOW() WHERE id = %s;", (alert_id,))
+                cursor.execute(
+                    "UPDATE alerts SET last_triggered_at = NOW() WHERE id = %s;",
+                    (alert_id,),
+                )
                 conn.commit()
 
         except Exception as e:
