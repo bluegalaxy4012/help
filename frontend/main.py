@@ -15,10 +15,16 @@ FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", None)
 
 client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_PROVIDER_API_URL)
 
-TOP_STOCKS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "TSM", "LLY", "V", "JPM", "AVGO"]
-TOP_ETFS = ["SPY", "QQQ", "IWM", "GLD", "SLV", "USO", "UNG", "TLT", "IBIT", "ETHA", "XLF", "XLK", "XLE", "XLV"]
-TOP_CRYPTOS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "AVAX", "DOT", "LINK"]
+# TOP_STOCKS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "TSM", "LLY", "V", "JPM", "AVGO"]
+# TOP_ETFS = ["SPY", "QQQ", "IWM", "GLD", "SLV", "USO", "UNG", "TLT", "IBIT", "ETHA", "XLF", "XLK", "XLE", "XLV"]
+# TOP_CRYPTOS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "AVAX", "DOT", "LINK"]
+STOCK_NAMES = {"AAPL": "Apple", "MSFT": "Microsoft", "NVDA": "Nvidia", "GOOGL": "Alphabet/Google", "AMZN": "Amazon", "META": "Meta Platforms", "TSLA": "Tesla", "TSM": "Taiwan Semiconductor", "LLY": "Eli Lilly", "V": "Visa", "JPM": "JPMorgan Chase", "AVGO": "Broadcom"}
+ETF_NAMES = {"SPY": "SPDR S&P 500", "QQQ": "Invesco QQQ Trust", "IWM": "iShares Russell 2000", "GLD": "SPDR Gold Shares", "SLV": "iShares Silver Trust", "USO": "United States Oil Fund", "UNG": "United States Natural Gas", "TLT": "iShares 20+ Year Treasury Bond", "IBIT": "iShares Bitcoin Trust", "ETHA": "iShares Ethereum Trust", "XLF": "Financial Select Sector SPDR", "XLK": "Technology Select Sector SPDR", "XLE": "Energy Select Sector SPDR", "XLV": "Health Care Select Sector SPDR"}
+CRYPTO_NAMES = {"BTC": "Bitcoin", "ETH": "Ethereum", "BNB": "Binance Coin", "SOL": "Solana", "XRP": "Ripple", "ADA": "Cardano", "DOGE": "Dogecoin", "TRX": "Tron", "AVAX": "Avalanche", "DOT": "Polkadot", "LINK": "Chainlink"}
 
+STOCK_MAPPING_STR = ", ".join([f"{k} ({v})" for k, v in STOCK_NAMES.items()])
+ETF_MAPPING_STR = ", ".join([f"{k} ({v})" for k, v in ETF_NAMES.items()])
+CRYPTO_MAPPING_STR = ", ".join([f"{k} ({v})" for k, v in CRYPTO_NAMES.items()])
 
 st.set_page_config(page_title="AI Trading Helper", layout="wide")
 st.title("AI Trading Helper")
@@ -31,11 +37,17 @@ if "user_id" not in st.session_state:
 SYSTEM_PROMPT = f"""You are an elite quantitative analyst AI powered by the {MODEL_NAME} architecture.
 You have access to a highly-secure local database via the `fetch_local_database` tool, and the live internet via your `browser_search` tool.
 
+SYSTEM ENVIRONMENT & TIMEZONE AWARENESS:
+- ALL internal system data, price timestamps, and database records operate in strict UTC. 
+- When providing market hours, news events, or alert timings, ALWAYS calculate and present the answer in UTC.
+- You MUST explicitly append "UTC" to any time you provide to the user, ensuring they know exactly what timezone you are referencing.
+- Do not share any internal implementation details about the database structure, API endpoints, credentials or tool mechanics with the user.
+
 CRITICAL ASSET UNIVERSE & MAPPING:
 Our local database ONLY tracks real-time prices and news for the following exact tickers. An example of why you should first try VT instead of VWRD.
-- CRYPTO: {', '.join(TOP_CRYPTOS)}
-- STOCKS: {', '.join(TOP_STOCKS)}
-- ETFS: {', '.join(TOP_ETFS)}
+- CRYPTO: {CRYPTO_MAPPING_STR}
+- STOCKS: {STOCK_MAPPING_STR}
+- ETFS: {ETF_MAPPING_STR}
 
 ALERTS MANAGEMENT RULES:
 You can manage background monitoring alerts for the user. 
@@ -46,7 +58,6 @@ You can manage background monitoring alerts for the user.
 5. Use `list_alerts` to show currently active monitors.
 6. Use `delete_alert` if the user wants to remove one (you must ask for the exact Alert ID if they don't provide it).
 7. STRICT DIRECTION RULE: Alerts are UNIDIRECTIONAL. A positive percentage tracks ONLY pumps. A negative percentage tracks ONLY drops. You must explicitly tell the user which direction the alert is tracking. NEVER say it tracks "either direction". The same for volume - it must be clear if the user is asking for spikes (over) or droughts (under).
-8. TIMEZONE AWARENESS: All internal system data, price timestamps, and database records operate in pure UTC. If the user asks about market hours, news events, or alert timings, always calculate and provide the answer in UTC so it matches the internal system.
 
 TOOL ROUTING & ANTI-HALLUCINATION RULES:
 1. For assets IN THE LIST ABOVE: Always use `fetch_local_database` first. 
