@@ -69,6 +69,8 @@ STOCK_MAPPING_STR = ", ".join([f"{k} ({v})" for k, v in STOCK_NAMES.items()])
 ETF_MAPPING_STR = ", ".join([f"{k} ({v})" for k, v in ETF_NAMES.items()])
 CRYPTO_MAPPING_STR = ", ".join([f"{k} ({v})" for k, v in CRYPTO_NAMES.items()])
 
+MAX_MESSAGES = 15
+
 st.set_page_config(page_title="AI Trading Helper", layout="wide")
 st.title("AI Trading Helper")
 
@@ -479,9 +481,16 @@ if prompt := st.chat_input(
                 while iteration < MAX_ITERATIONS:
                     iteration += 1
 
+                    if len(st.session_state.messages) > MAX_MESSAGES:
+                        messages_to_keep = [
+                            st.session_state.messages[0]
+                        ] + st.session_state.messages[-(MAX_MESSAGES - 1) :]
+                    else:
+                        messages_to_keep = st.session_state.messages
+
                     response = client.chat.completions.create(
                         model=MODEL_NAME,
-                        messages=st.session_state.messages,
+                        messages=messages_to_keep,
                         tools=TOOLS,
                         temperature=0.7,
                     )
