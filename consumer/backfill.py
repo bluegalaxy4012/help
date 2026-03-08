@@ -9,7 +9,7 @@ KAFKA_BROKER = os.environ.get("KAFKA_BROKER", "kafka:9092")
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
 
 
-def run_backfill():
+def run_backfill() -> None:
     print(f"Connecting to Kafka at {KAFKA_BROKER} for backfill", flush=True)
     producer = Producer({"bootstrap.servers": KAFKA_BROKER})
 

@@ -6,6 +6,7 @@ from sentence_transformers import SentenceTransformer
 from typing import List
 from strawberry.fastapi import GraphQLRouter
 import uvicorn
+from psycopg2.extensions import connection
 
 DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_PORT = os.environ.get("DB_PORT", "5432")
@@ -16,7 +17,7 @@ DB_NAME = os.environ.get("DB_NAME", "db")
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
-def get_db():
+def get_db() -> connection:
     return psycopg2.connect(
         host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASS, dbname=DB_NAME
     )

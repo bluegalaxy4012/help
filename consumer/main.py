@@ -6,6 +6,8 @@ import psycopg2
 from psycopg2.extras import execute_values
 from confluent_kafka import Consumer
 from sentence_transformers import SentenceTransformer
+from typing import List, Tuple, Any
+from psycopg2.extensions import connection, cursor
 
 KAFKA_BROKER = os.environ.get("KAFKA_BROKER", "localhost:9092")
 DB_HOST = os.environ.get("DB_HOST", "localhost")
@@ -17,7 +19,7 @@ DB_NAME = os.environ.get("DB_NAME", "db")
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
-def get_db_connection():
+def get_db_connection() -> connection:
     return psycopg2.connect(
         host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASS, dbname=DB_NAME
     )
@@ -29,7 +31,7 @@ kafka_config = {
 }
 
 
-def consume_prices():
+def consume_prices() -> None:
     consumer = Consumer({**kafka_config, "group.id": "prices-consumer-group"})
     consumer.subscribe(["raw_prices"])
 
@@ -71,7 +73,9 @@ def consume_prices():
         consumer.close()
 
 
-def insert_price_batch(conn, cursor, batch):
+def insert_price_batch(
+    conn: connection, cursor: cursor, batch: List[Tuple[Any, ...]]
+) -> None:
     query = "INSERT INTO raw_prices (time, symbol, price, volume) VALUES %s"
     try:
         execute_values(cursor, query, batch)
@@ -82,7 +86,7 @@ def insert_price_batch(conn, cursor, batch):
         conn.rollback()
 
 
-def consume_news():
+def consume_news() -> None:
     consumer = Consumer({**kafka_config, "group.id": "news-consumer-group"})
     consumer.subscribe(["financial_news"])
 

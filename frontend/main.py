@@ -4,6 +4,7 @@ import requests
 import re
 import streamlit as st
 from openai import OpenAI
+from typing import List
 
 DB_API_URL = os.environ.get("GRAPHQL_API_URL", "http://graphql_api:8888/graphql")
 LLM_PROVIDER_API_URL = os.environ.get(
@@ -133,7 +134,7 @@ for msg in st.session_state.messages:
 
 
 # this will be used directly by the LLM so we don't have to worry about formatting or parsing
-def fetch_local_database(symbols, search_query):
+def fetch_local_database(symbols: List[str], search_query: str) -> str:
     context_string = ""
 
     news_query = """query GetContext($q: String!) { askAiNews(question: $q, limit: 5) { headline, summary, url } }"""
@@ -188,7 +189,7 @@ def fetch_local_database(symbols, search_query):
 
 
 # you can replace all this with your search method of choice
-def browser_search(query, num_results=3):
+def browser_search(query: str, num_results: int = 3) -> str:
     # first search price
     ticker = None
     url = "https://finnhub.io/api/v1/search"
@@ -259,8 +260,13 @@ def browser_search(query, num_results=3):
 
 
 def create_database_alert(
-    user_id, symbol, percent_change, tf_minutes, vol_mult=0.0, vol_over=True
-):
+    user_id: int,
+    symbol: str,
+    percent_change: float,
+    tf_minutes: int,
+    vol_mult: float = 0.0,
+    vol_over: bool = True,
+) -> str:
     mutation = """
         mutation CreateAlert($sym: String!, $percent: Float!, $mins: Int!, $vol: Float!, $over: Boolean!, $uid: Int!) {
             createAlert(symbol: $sym, priceChangePercent: $percent, timeframeMinutes: $mins, volumeMultiplier: $vol, volumeOver: $over, userId: $uid) {
@@ -308,7 +314,7 @@ def create_database_alert(
         return f"API Error: {e}"
 
 
-def get_database_alerts(user_id):
+def get_database_alerts(user_id: int) -> str:
     query = """query GetAlerts($uid: Int!) { getAlerts(userId: $uid) { id symbol priceChangePercent timeframeMinutes } }"""
 
     variables = {"uid": user_id}
@@ -332,7 +338,7 @@ def get_database_alerts(user_id):
         return f"API Error: {e}"
 
 
-def delete_database_alert(user_id, alert_id):
+def delete_database_alert(user_id: int, alert_id: int) -> str:
     mutation = """mutation DeleteAlert($uid: Int!, $id: Int!) { deleteAlert(userId: $uid, alertId: $id) }"""
 
     variables = {"uid": user_id, "id": alert_id}

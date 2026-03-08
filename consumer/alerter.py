@@ -4,7 +4,7 @@ import psycopg2
 from datetime import datetime, timedelta, timezone
 import hashlib
 import requests
-
+from psycopg2.extensions import connection
 
 DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_PORT = os.environ.get("DB_PORT", "5432")
@@ -29,7 +29,7 @@ TOP_CRYPTOS = [
 SLEEP_SECONDS = 8
 
 
-def get_db():
+def get_db() -> connection:
     return psycopg2.connect(
         host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASS, dbname=DB_NAME
     )
@@ -37,15 +37,15 @@ def get_db():
 
 # you can replace all this with the alerting method of choice
 def sendAlert(
-    alert_id,
-    user_id,
-    symbol,
-    current_price,
-    reference_price,
-    percent_change,
-    target_percent,
-    actual_vol_display,
-):
+    alert_id: int,
+    user_id: int,
+    symbol: str,
+    current_price: float,
+    reference_price: float,
+    percent_change: float,
+    target_percent: float,
+    actual_vol_display: str,
+) -> None:
     # print(
     #     f"[ALERT] Alert #{alert_id} triggered for User {user_id}! {symbol} — current ${current_price:.2f} vs ref ${reference_price:.2f} "
     #     f"-> {percent_change:.2f}% (Target: {target_percent}%) | Vol Mult: {actual_vol_display}",
@@ -69,7 +69,7 @@ def sendAlert(
         print(f"Failed to send alert for Alert #{alert_id}: {e}", flush=True)
 
 
-def evaluate_alerts():
+def evaluate_alerts() -> None:
     conn = get_db()
     cursor = conn.cursor()
 
